@@ -510,6 +510,7 @@ export default function Page() {
     percentualAtendente?: number,
     consultoriaBruta?: number,
     atendenteUserId?: number,
+    atendente2UserId?: number,
     impostoPercentual?: number,
     temCorretor?: boolean,
     corretorNome?: string,
@@ -524,7 +525,9 @@ export default function Page() {
         corretor_nome: corretorNome || null,
         corretor_comissao_valor: corretorComissaoValor || null,
         percentual_atendente: percentualAtendente,
-        atendente_user_id: atendenteUserId
+        atendente_user_id: atendenteUserId,
+        atendente1_user_id: atendenteUserId,
+        atendente2_user_id: atendente2UserId
       });
       toast.success("Liberação efetivada com sucesso!");
     } catch (error) {

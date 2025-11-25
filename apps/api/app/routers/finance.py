@@ -755,9 +755,16 @@ class DisburseSimpleIn(BaseModel):
     corretor_nome: str | None = None
     corretor_comissao_valor: float | None = None
 
-    # Distribuição (já existente)
-    percentual_atendente: float | None = None
+    # Distribuição - Múltiplos Atendentes
+    atendente1_user_id: int | None = None
+    percentual_atendente1: float | None = None
+    atendente2_user_id: int | None = None
+    percentual_atendente2: float | None = None
+    percentual_balcao: float | None = None
+
+    # RETROCOMPATIBILIDADE: Manter campos antigos como alias
     atendente_user_id: int | None = None
+    percentual_atendente: float | None = None
 
 
 @r.post("/disburse-simple")
@@ -929,14 +936,8 @@ async def disburse_simple(
                 else:
                     print("[AVISO] Usuário 'balcao@lifecalling.com' não encontrado ou inativo. Receita de balcão sem agent_user_id.")
 
-                # Percentual padrão: 70% atendente, 30% balcão
-                percentual_atendente = data.percentual_atendente or 70.0
-                percentual_balcao = 100.0 - percentual_atendente
-
-                # ✅ CORRIGIDO: Deduzir comissão ANTES de distribuir
-                # 1. Consultoria Líquida = Bruta - Imposto
-                # 2. Deduzir Comissão (se houver)
-                # 3. Distribuir o valor restante
+                # ✅ SUPORTE A MÚLTIPLOS AGENTES
+                # Deduzir comissão ANTES de distribuir
                 consultoria_para_distribuir = consultoria_liquida
                 if (data.tem_corretor and data.corretor_comissao_valor and
                         data.corretor_comissao_valor > 0):
@@ -953,48 +954,90 @@ async def disburse_simple(
                 # Garantir que não seja negativo
                 if consultoria_para_distribuir < 0:
                     consultoria_para_distribuir = 0
-                    print(
-                        "[AVISO] Consultoria para distribuir ajustada "
-                        "para 0 após dedução de comissão"
-                    )
 
-                # Distribuir valor após dedução da comissão
-                valor_atendente = (
-                    consultoria_para_distribuir * (percentual_atendente / 100)
-                )
-                valor_balcao = (
-                    consultoria_para_distribuir * (percentual_balcao / 100)
-                )
+                # Definir IDs dos atendentes (retrocompatibilidade)
+                atendente1_id = data.atendente1_user_id or data.atendente_user_id or c.assigned_user_id
+                atendente2_id = data.atendente2_user_id
+
+                # Definir percentuais
+                if atendente1_id and atendente2_id:
+                    # Distribuição com 2 atendentes
+                    percentual_atendente1 = data.percentual_atendente1 or 35.0
+                    percentual_atendente2 = data.percentual_atendente2 or 35.0
+                    percentual_balcao = data.percentual_balcao or (100.0 - percentual_atendente1 - percentual_atendente2)
+                else:
+                    # Distribuição com 1 atendente (retrocompatibilidade)
+                    percentual_atendente1 = data.percentual_atendente1 or data.percentual_atendente or 70.0
+                    percentual_atendente2 = 0.0
+                    percentual_balcao = 100.0 - percentual_atendente1
+
+                # Calcular valores
+                valor_atendente1 = (consultoria_para_distribuir * percentual_atendente1) / 100
+                valor_atendente2 = (consultoria_para_distribuir * percentual_atendente2) / 100
+                valor_balcao = (consultoria_para_distribuir * percentual_balcao) / 100
 
                 print(
-                    f"[INFO] Distribuindo consultoria líquida "
-                    f"(após imposto e comissão): "
-                    f"Atendente ({percentual_atendente}%): "
-                    f"R$ {valor_atendente:.2f} | "
+                    f"[INFO] Distribuindo consultoria: "
+                    f"Atendente1 ({percentual_atendente1}%): R$ {valor_atendente1:.2f} | "
+                    f"Atendente2 ({percentual_atendente2}%): R$ {valor_atendente2:.2f} | "
                     f"Balcão ({percentual_balcao}%): R$ {valor_balcao:.2f}"
                 )
 
-                # Usar atendente fornecido ou atendente do caso como fallback
-                atendente_id = data.atendente_user_id or c.assigned_user_id
+                # Import ContractAgent
+                from ..models import FinanceIncome, User, ContractAgent
 
-                # Receita 1: Consultoria Líquida - Atendente
-                if valor_atendente > 0:
-                    income_atendente = FinanceIncome(
+                # Receita Atendente 1
+                if valor_atendente1 > 0 and atendente1_id:
+                    income_atendente1 = FinanceIncome(
                         date=data.disbursed_at or now_brt(),
                         income_type="Consultoria Líquida - Atendente",
                         income_name=f"Consultoria Líquida "
-                                   f"{percentual_atendente:.0f}% - "
+                                   f"{percentual_atendente1:.0f}% - "
                                    f"{client_name} (Contrato #{ct.id})",
-                        amount=valor_atendente,
+                        amount=valor_atendente1,
                         created_by=user.id,
-                        agent_user_id=atendente_id,
+                        agent_user_id=atendente1_id,
                         client_cpf=c.client.cpf if c.client else None,
                         client_name=client_name
                     )
-                    db.add(income_atendente)
+                    db.add(income_atendente1)
 
-                # Receita 2: Consultoria Líquida - Balcão
-                if valor_balcao > 0:
+                    # Criar registro em contract_agents
+                    contract_agent1 = ContractAgent(
+                        contract_id=ct.id,
+                        user_id=atendente1_id,
+                        percentual=percentual_atendente1,
+                        is_primary=(ct.agent_user_id == atendente1_id)
+                    )
+                    db.add(contract_agent1)
+
+                # Receita Atendente 2
+                if valor_atendente2 > 0 and atendente2_id:
+                    income_atendente2 = FinanceIncome(
+                        date=data.disbursed_at or now_brt(),
+                        income_type="Consultoria Líquida - Atendente",
+                        income_name=f"Consultoria Líquida "
+                                   f"{percentual_atendente2:.0f}% - "
+                                   f"{client_name} (Contrato #{ct.id})",
+                        amount=valor_atendente2,
+                        created_by=user.id,
+                        agent_user_id=atendente2_id,
+                        client_cpf=c.client.cpf if c.client else None,
+                        client_name=client_name
+                    )
+                    db.add(income_atendente2)
+
+                    # Criar registro em contract_agents
+                    contract_agent2 = ContractAgent(
+                        contract_id=ct.id,
+                        user_id=atendente2_id,
+                        percentual=percentual_atendente2,
+                        is_primary=(ct.agent_user_id == atendente2_id)
+                    )
+                    db.add(contract_agent2)
+
+                # Receita Balcão
+                if valor_balcao > 0 and percentual_balcao > 0:
                     income_balcao = FinanceIncome(
                         date=data.disbursed_at or now_brt(),
                         income_type="Consultoria Líquida - Balcão",

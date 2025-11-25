@@ -66,6 +66,7 @@ export interface FinanceCardProps {
     percentualAtendente?: number,
     consultoriaBruta?: number,
     atendenteUserId?: number,
+    atendente2UserId?: number,
     impostoPercentual?: number,
     temCorretor?: boolean,
     corretorNome?: string,
@@ -239,6 +240,7 @@ export function FinanceCard({
   // Estados para distribuição
   const [percentualAtendente, setPercentualAtendente] = React.useState<number>(70); // Padrão 70%
   const [selectedAtendenteId, setSelectedAtendenteId] = React.useState<number | null>(null);
+  const [selectedAtendente2Id, setSelectedAtendente2Id] = React.useState<number | null>(null);
 
   // Estados para consultoria bruta + imposto + corretor
   const [consultoriaBruta, setConsultoriaBruta] = React.useState<string>("");
@@ -1240,29 +1242,86 @@ export function FinanceCard({
                 </div>
               </div>
 
+              {/* Atendente 2 (Opcional) */}
+              <div className="mt-3">
+                <label className="text-sm text-muted-foreground mb-1 block">
+                  Atendente 2 (Opcional - divide comissão)
+                </label>
+                <select
+                  className="w-full px-3 py-2 rounded-md border border-input bg-background text-sm"
+                  value={selectedAtendente2Id || ""}
+                  onChange={(e) => setSelectedAtendente2Id(Number(e.target.value) || null)}
+                >
+                  <option value="">Nenhum</option>
+                  {availableUsers
+                    .filter(u => u.id !== selectedAtendenteId)
+                    .map((user) => (
+                      <option key={user.id} value={user.id}>
+                        {user.name}
+                      </option>
+                    ))}
+                </select>
+                {selectedAtendente2Id && (
+                  <p className="text-xs text-amber-600 mt-1 flex items-center gap-1">
+                    <AlertCircle className="h-3 w-3" />
+                    Com 2 atendentes: cada um recebe {(percentualAtendente / 2).toFixed(1)}%
+                  </p>
+                )}
+              </div>
+
               {/* Preview da Distribuição */}
               {consultoriaBruta && (() => {
                 // 1. Calcular consultoria líquida (Bruta - Imposto)
                 const liquidaAposImposto = parseCurrencyToNumber(consultoriaBruta) * (1 - impostoPercentual / 100);
-                
+
                 // 2. Deduzir comissão do corretor (se houver)
                 const comissaoValor = temCorretor ? parseCurrencyToNumber(corretorComissao) : 0;
                 const liquidaParaDistribuir = liquidaAposImposto - comissaoValor;
 
+                // 3. Distribuir entre atendentes
+                const percentAtendente1 = selectedAtendente2Id
+                  ? percentualAtendente / 2
+                  : percentualAtendente;
+                const percentAtendente2 = selectedAtendente2Id
+                  ? percentualAtendente / 2
+                  : 0;
+                const percentBalcao = 100 - percentualAtendente;
+
+                const valorAtendente1 = (liquidaParaDistribuir * percentAtendente1) / 100;
+                const valorAtendente2 = (liquidaParaDistribuir * percentAtendente2) / 100;
+                const valorBalcao = (liquidaParaDistribuir * percentBalcao) / 100;
+
                 return (
                   <div className="rounded-lg bg-muted/50 p-3 space-y-2 text-sm">
+                    {selectedAtendenteId && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">
+                          Atendente 1 ({percentAtendente1.toFixed(1)}%):
+                        </span>
+                        <span className="font-medium text-success">
+                          {formatCurrency(valorAtendente1)}
+                        </span>
+                      </div>
+                    )}
+
+                    {selectedAtendente2Id && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">
+                          Atendente 2 ({percentAtendente2.toFixed(1)}%):
+                        </span>
+                        <span className="font-medium text-success">
+                          {formatCurrency(valorAtendente2)}
+                        </span>
+                      </div>
+                    )}
+
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">Atendente ({percentualAtendente}%):</span>
-                      <span className="font-medium text-success">
-                        {formatCurrency((liquidaParaDistribuir * percentualAtendente) / 100)}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Balcão ({100 - percentualAtendente}%):</span>
+                      <span className="text-muted-foreground">Balcão ({percentBalcao}%):</span>
                       <span className="font-medium text-info">
-                        {formatCurrency((liquidaParaDistribuir * (100 - percentualAtendente)) / 100)}
+                        {formatCurrency(valorBalcao)}
                       </span>
                     </div>
+
                     <div className="pt-2 border-t flex justify-between font-semibold">
                       <span>Total Líquido:</span>
                       <span>{formatCurrency(liquidaParaDistribuir)}</span>
@@ -1288,6 +1347,7 @@ export function FinanceCard({
                     percentualAtendente,
                     brutaValue,
                     selectedAtendenteId || undefined,
+                    selectedAtendente2Id || undefined,
                     impostoPercentual,
                     temCorretor,
                     temCorretor ? corretorNome : undefined,
