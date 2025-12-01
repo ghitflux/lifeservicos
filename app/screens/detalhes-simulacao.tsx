@@ -232,6 +232,24 @@ export default function DetalhesSimulacao() {
           </Text>
         </View>
 
+        {/* Card informativo para contrato efetivado */}
+        {simulation.status === 'contrato_efetivado' && (
+          <View style={[styles.infoCard, { backgroundColor: (colors.success || '#22c55e') + '15', borderColor: (colors.success || '#22c55e') + '40' }]}>
+            <View style={styles.infoCardHeader}>
+              <Ionicons name="checkmark-circle" size={24} color={colors.success || '#22c55e'} />
+              <Text style={[styles.infoCardTitle, { color: colors.success || '#22c55e' }]}>
+                Contrato Efetivado
+              </Text>
+            </View>
+            <View style={styles.infoCardContent}>
+              <Ionicons name="logo-whatsapp" size={20} color={colors.textSecondary} style={{ marginTop: 2 }} />
+              <Text style={[styles.infoCardText, { color: colors.text }]}>
+                O agente responsável entrará em contato via WhatsApp para informar os próximos passos e finalizar o processo.
+              </Text>
+            </View>
+          </View>
+        )}
+
         {showFinanceActions && (
           <View style={styles.actionsRow}>
             <Pressable style={[styles.rejectButton, { borderColor: (colors.error || '#ef4444') + '50', backgroundColor: colors.card }]} onPress={handleCancelFinance}>
@@ -449,6 +467,32 @@ const styles = StyleSheet.create({
   preApprovedValue: {
     fontSize: 36,
     fontWeight: 'bold',
+  },
+  infoCard: {
+    marginBottom: spacing.md,
+    padding: spacing.lg,
+    borderRadius: borderRadius.xl,
+    borderWidth: 2,
+    gap: spacing.md,
+  },
+  infoCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  infoCardTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  infoCardContent: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    alignItems: 'flex-start',
+  },
+  infoCardText: {
+    flex: 1,
+    fontSize: 14,
+    lineHeight: 20,
   },
   actionsRow: {
     flexDirection: 'row',
