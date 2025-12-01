@@ -43,6 +43,16 @@ export default function DetalhesSimulacao() {
     fetchSimulation();
   }, []);
 
+  // Toast informativo quando contrato está efetivado
+  useEffect(() => {
+    if (simulation && simulation.status === 'contrato_efetivado') {
+      showSuccess(
+        'Contrato Efetivado',
+        'Seu contrato foi efetivado com sucesso! O agente responsável entrará em contato via WhatsApp para informar os próximos passos e finalizar o processo.'
+      );
+    }
+  }, [simulation?.status]);
+
   const fetchSimulation = async () => {
     try {
       let data: any = null;
