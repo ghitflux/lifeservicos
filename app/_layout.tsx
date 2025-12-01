@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { ThemeProvider, useTheme } from '@/contexts/ThemeContext';
 import { useSplashScreen } from '@/hooks/useSplashScreen';
+import { usePushNotifications } from '@/hooks/usePushNotifications';
 
 const queryClient = new QueryClient();
 
@@ -15,6 +16,7 @@ function ThemedStatusBar() {
 function RootLayoutContent() {
   const { theme } = useTheme();
   useSplashScreen(); // Handle splash screen hiding
+  usePushNotifications(); // Initialize push notifications
 
   return (
     <>

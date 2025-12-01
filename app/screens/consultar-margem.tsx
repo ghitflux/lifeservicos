@@ -26,26 +26,14 @@ export default function ConsultarMargem() {
   const [marginData, setMarginData] = useState<MarginData | null>(null);
 
   const handleConsult = async () => {
-    if (!cpf) {
-      showError('Erro', 'Digite seu CPF');
-      return;
-    }
-
-    // Basic CPF format validation
-    const cpfNumbers = cpf.replace(/\D/g, '');
-    if (cpfNumbers.length !== 11) {
-      showError('Erro', 'CPF inválido. Digite 11 dígitos.');
-      return;
-    }
-
     setLoading(true);
     try {
-      const response = await api.post('/api/v1/margins', { cpf: cpfNumbers });
+      // Backend expõe o saldo atual via /mobile/margins/current
+      const response = await api.get('/mobile/margins/current');
       setMarginData(response.data);
     } catch (error: any) {
       console.error('Margin consultation error:', error);
-      showError('Erro', error.response?.data?.detail || 'Erro ao consultar margem');
-      setLoading(false);
+      showError('Erro', error.response?.data?.detail || 'Erro ao consultar margem no backend web');
     } finally {
       setLoading(false);
     }

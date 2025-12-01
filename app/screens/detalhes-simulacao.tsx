@@ -4,11 +4,13 @@ import { useState, useEffect } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/contexts/ThemeContext';
-import { typography, borderRadius, spacing } from '@/constants/theme';
+import { borderRadius, spacing } from '@/constants/theme';
 import { Header, MobileNav, AlertDialog } from '@/components';
 import { formatCurrency } from '@/utils/formatters';
 import { api } from '@/services/api';
 import { useAlert } from '@/hooks/useAlert';
+import { mapSimulationStatus } from '@/utils/status';
+import { useAuth } from '@/hooks/useAuth';
 
 interface Simulation {
   id: string;
@@ -20,6 +22,11 @@ interface Simulation {
   total_amount: number;
   status: string;
   created_at: string;
+  banks_json?: any[];
+  prazo?: number;
+  coeficiente?: string;
+  seguro?: number;
+  percentual_consultoria?: number;
 }
 
 export default function DetalhesSimulacao() {
@@ -28,6 +35,7 @@ export default function DetalhesSimulacao() {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const { alert, showError, showSuccess, showConfirm, showDestructive, dismissAlert } = useAlert();
+  const { user } = useAuth();
   const [simulation, setSimulation] = useState<Simulation | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -37,63 +45,117 @@ export default function DetalhesSimulacao() {
 
   const fetchSimulation = async () => {
     try {
-      const response = await api.get(`/api/v1/simulations/${params.id}`);
-      setSimulation(response.data);
-    } catch (error) {
+      let data: any = null;
+
+      // Tenta detalhe completo (admin); se 403, cai para lista do cliente
+      try {
+        const adminDetail = await api.get(`/mobile/admin/simulations/${params.id}`);
+        data = adminDetail.data;
+      } catch (err: any) {
+        if (err?.response?.status !== 403 && err?.response?.status !== 404) {
+          throw err;
+        }
+
+        const listResponse = await api.get('/mobile/simulations');
+        data = (listResponse.data || []).find((sim: any) => String(sim.id) === String(params.id));
+      }
+
+      if (!data) {
+        throw new Error('Simulação não encontrada');
+      }
+
+      setSimulation(data);
+    } catch (error: any) {
       console.error('Error fetching simulation:', error);
-      showError('Erro', 'Não foi possível carregar a simulação');
+      const message = error?.response?.data?.detail || 'Não foi possível carregar a simulação';
+      showError('Erro', message);
       router.back();
     } finally {
       setLoading(false);
     }
   };
 
-  const handleReprovar = () => {
-    showDestructive(
-      'Reprovar Simulação',
-      'Tem certeza que deseja reprovar esta simulação?',
-      async () => {
-        try {
-          await api.put(`/api/v1/simulations/${params.id}/status`, { status: 'rejected' });
-          showSuccess('Sucesso', 'Simulação reprovada com sucesso', () => router.back());
-        } catch (error) {
-          showError('Erro', 'Não foi possível reprovar a simulação');
-        }
-      }
-    );
+  const normalizedStatus = (simulation?.status || '').toLowerCase();
+  const canManageStatus = ['admin', 'supervisor', 'financeiro'].includes((user?.role || '').toLowerCase());
+  const isClientApproved =
+    normalizedStatus.includes('approved_by_client') ||
+    normalizedStatus.includes('cliente_aprovada') ||
+    normalizedStatus.includes('aprovada');
+  const isAdminApproved = normalizedStatus === 'approved'; // aguardando aprovação do cliente
+
+  const getToneColor = (tone: string) => {
+    if (tone === 'success') return colors.success || '#22c55e';
+    if (tone === 'warning') return colors.warning || '#f59e0b';
+    if (tone === 'error') return colors.error || '#ef4444';
+    return colors.accent;
   };
 
-  const handleAprovar = () => {
+  const handleApproveByClient = () => {
     showConfirm(
-      'Aprovar e Enviar',
-      'Tem certeza que deseja aprovar e enviar esta simulação?',
+      'Aprovar simulação',
+      'Você confirma que concorda com esta proposta?',
       async () => {
         try {
-          await api.put(`/api/v1/simulations/${params.id}/status`, { status: 'approved' });
-          showSuccess('Sucesso', 'Simulação aprovada e enviada com sucesso', () => router.back());
-        } catch (error) {
-          showError('Erro', 'Não foi possível aprovar a simulação');
+          await api.post(`/mobile/simulations/${params.id}/approve-by-client`);
+          await fetchSimulation();
+          showSuccess('Sucesso', 'Simulação aprovada e enviada ao financeiro.');
+        } catch (error: any) {
+          const message = error?.response?.data?.detail || 'Não foi possível aprovar a simulação';
+          showError('Erro', message);
         }
       }
     );
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'approved': return colors.success || '#22c55e';
-      case 'pending': return '#f59e0b';
-      case 'rejected': return colors.error || '#ef4444';
-      default: return colors.textSecondary;
-    }
+  const handleRejectByClient = () => {
+    showDestructive(
+      'Reprovar simulação',
+      'Deseja reprovar esta simulação?',
+      async () => {
+        try {
+          await api.post(`/mobile/simulations/${params.id}/reject-by-client`);
+          await fetchSimulation();
+          showSuccess('Reprovada', 'Simulação reprovada.');
+        } catch (error: any) {
+          const message = error?.response?.data?.detail || 'Não foi possível reprovar a simulação';
+          showError('Erro', message);
+        }
+      }
+    );
   };
 
-  const getStatusText = (status: string) => {
-    switch (status) {
-      case 'approved': return 'Aprovada';
-      case 'pending': return 'Pendente';
-      case 'rejected': return 'Rejeitada';
-      default: return status;
-    }
+  const handleSendToFinance = () => {
+    showConfirm(
+      'Enviar ao Financeiro',
+      'Confirmar o envio desta simulação para o financeiro?',
+      async () => {
+        try {
+          await api.post(`/finance/mobile/${params.id}/approve`);
+          await fetchSimulation();
+          showSuccess('Sucesso', 'Simulação enviada ao financeiro');
+        } catch (error: any) {
+          const message = error?.response?.data?.detail || 'Não foi possível enviar ao financeiro';
+          showError('Erro', message);
+        }
+      }
+    );
+  };
+
+  const handleCancelFinance = () => {
+    showDestructive(
+      'Cancelar simulação',
+      'Deseja cancelar esta simulação?',
+      async () => {
+        try {
+          await api.post(`/finance/mobile/${params.id}/cancel`);
+          await fetchSimulation();
+          showSuccess('Cancelada', 'Simulação cancelada no financeiro');
+        } catch (error: any) {
+          const message = error?.response?.data?.detail || 'Não foi possível cancelar a simulação';
+          showError('Erro', message);
+        }
+      }
+    );
   };
 
   if (loading) {
@@ -113,6 +175,12 @@ export default function DetalhesSimulacao() {
     return null;
   }
 
+  const statusMeta = mapSimulationStatus(simulation.status);
+  const statusColor = getToneColor(statusMeta.tone);
+  const showFinanceActions =
+    canManageStatus &&
+    ['approved_by_client', 'cliente_aprovada', 'simulacao_aprovada', 'financeiro_pendente'].includes(normalizedStatus);
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
       <Header
@@ -127,14 +195,20 @@ export default function DetalhesSimulacao() {
         contentContainerStyle={{ paddingBottom: 80 + insets.bottom }}
       >
         <View style={styles.statusBadgeContainer}>
-          <View style={[styles.statusBadge, { backgroundColor: getStatusColor(simulation.status) + '20', borderColor: getStatusColor(simulation.status) + '50' }]}>
+          <View style={[styles.statusBadge, { backgroundColor: statusColor + '20', borderColor: statusColor + '50' }]}>
             <Ionicons
-              name={simulation.status === 'approved' ? 'checkmark-circle' : simulation.status === 'rejected' ? 'close-circle' : 'time'}
+              name={
+                statusMeta.tone === 'success'
+                  ? 'checkmark-circle'
+                  : statusMeta.tone === 'error'
+                    ? 'close-circle'
+                    : 'time'
+              }
               size={14}
-              color={getStatusColor(simulation.status)}
+              color={statusColor}
             />
-            <Text style={[styles.statusBadgeText, { color: getStatusColor(simulation.status) }]}>
-              {getStatusText(simulation.status)}
+            <Text style={[styles.statusBadgeText, { color: statusColor }]}>
+              {statusMeta.label}
             </Text>
           </View>
         </View>
@@ -148,15 +222,28 @@ export default function DetalhesSimulacao() {
           </Text>
         </View>
 
-        {simulation.status === 'pending' && (
+        {showFinanceActions && (
           <View style={styles.actionsRow}>
-            <Pressable style={[styles.rejectButton, { borderColor: (colors.error || '#ef4444') + '50', backgroundColor: colors.card }]} onPress={handleReprovar}>
+            <Pressable style={[styles.rejectButton, { borderColor: (colors.error || '#ef4444') + '50', backgroundColor: colors.card }]} onPress={handleCancelFinance}>
+              <Ionicons name="close-circle" size={20} color={colors.error || '#ef4444'} />
+              <Text style={[styles.rejectButtonText, { color: colors.error || '#ef4444' }]}>Cancelar</Text>
+            </Pressable>
+            <Pressable style={[styles.approveButton, { backgroundColor: colors.success || '#22c55e' }]} onPress={handleSendToFinance}>
+              <Ionicons name="checkmark-circle" size={20} color="#fff" />
+              <Text style={[styles.approveButtonText, { color: '#fff' }]}>Enviar ao Financeiro</Text>
+            </Pressable>
+          </View>
+        )}
+
+        {!showFinanceActions && isAdminApproved && !isClientApproved && (
+          <View style={styles.actionsRow}>
+            <Pressable style={[styles.rejectButton, { borderColor: (colors.error || '#ef4444') + '50', backgroundColor: colors.card }]} onPress={handleRejectByClient}>
               <Ionicons name="close-circle" size={20} color={colors.error || '#ef4444'} />
               <Text style={[styles.rejectButtonText, { color: colors.error || '#ef4444' }]}>Reprovar</Text>
             </Pressable>
-            <Pressable style={[styles.approveButton, { backgroundColor: colors.success || '#22c55e' }]} onPress={handleAprovar}>
+            <Pressable style={[styles.approveButton, { backgroundColor: colors.accent }]} onPress={handleApproveByClient}>
               <Ionicons name="checkmark-circle" size={20} color="#fff" />
-              <Text style={[styles.approveButtonText, { color: '#fff' }]}>Aprovar e Enviar</Text>
+              <Text style={[styles.approveButtonText, { color: '#fff' }]}>Aprovar</Text>
             </Pressable>
           </View>
         )}
@@ -203,6 +290,65 @@ export default function DetalhesSimulacao() {
             </View>
           </View>
         </View>
+
+        {Array.isArray(simulation.banks_json) && simulation.banks_json.length > 0 && (
+          <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border + '80' }]}>
+            <View style={styles.sectionHeader}>
+              <Ionicons name="business" size={20} color={colors.accent} />
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>Bancos e produtos</Text>
+            </View>
+            {simulation.banks_json.map((bank: any, index: number) => (
+              <View key={`${bank.bank || bank.banco || 'bank'}-${index}`} style={{ marginBottom: spacing.sm }}>
+                <View style={styles.banksRow}>
+                  <View style={[styles.bankBadge, { borderColor: colors.border }]}>
+                    <Text style={[styles.bankBadgeText, { color: colors.text }]}>
+                      {(bank.bank || bank.banco || 'Banco').toString().toUpperCase()}
+                    </Text>
+                  </View>
+                  {bank.product && (
+                    <View style={[styles.bankBadge, { borderColor: colors.border }]}>
+                      <Text style={[styles.bankBadgeText, { color: colors.textSecondary }]}>
+                        {bank.product}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+                <View style={styles.bankInfo}>
+                  <Text style={[styles.bankInfoText, { color: colors.textSecondary }]}>
+                    Parcela: {formatCurrency(Number(bank.parcela || 0))}
+                  </Text>
+                  <Text style={[styles.bankInfoText, { color: colors.textSecondary }]}>
+                    Saldo: {formatCurrency(Number(bank.saldoDevedor || 0))}
+                  </Text>
+                  <Text style={[styles.bankInfoText, { color: colors.textSecondary }]}>
+                    Liberado: {formatCurrency(Number(bank.valorLiberado || 0))}
+                  </Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {(simulation.percentual_consultoria || simulation.seguro) && (
+          <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border + '80' }]}>
+            <View style={styles.sectionHeader}>
+              <Ionicons name="stats-chart" size={20} color={colors.accent} />
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>Custos e consultoria</Text>
+            </View>
+            {simulation.percentual_consultoria !== undefined && (
+              <View style={styles.infoRow}>
+                <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>% Consultoria</Text>
+                <Text style={[styles.infoValue, { color: colors.text }]}>{simulation.percentual_consultoria}%</Text>
+              </View>
+            )}
+            {simulation.seguro !== undefined && (
+              <View style={styles.infoRow}>
+                <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>Seguro</Text>
+                <Text style={[styles.infoValue, { color: colors.text }]}>{formatCurrency(Number(simulation.seguro || 0))}</Text>
+              </View>
+            )}
+          </View>
+        )}
 
         <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border + '80' }]}>
           <View style={styles.sectionHeader}>

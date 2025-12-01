@@ -31,8 +31,8 @@ export default function NovaSimulacao() {
     setLoading(true);
     try {
       // Create simulation on backend
-      const response = await api.post('/api/v1/simulations', {
-        simulation_type: 'consignado',
+      const response = await api.post('/mobile/simulations', {
+        simulation_type: 'multi_bank',
         requested_amount: requestedAmount,
         installments: numInstallments,
         interest_rate: rate,

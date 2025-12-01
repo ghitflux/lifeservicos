@@ -8,6 +8,7 @@ class Settings(BaseSettings):
 
     # Database
     DATABASE_URL: str = "postgresql://applife:applife_password@localhost:5432/applife_db"
+    WEB_API_URL: str = "http://localhost:8000"  # API do life-system para sincronização
 
     # Security
     SECRET_KEY: str = "your-secret-key-change-this-in-production"

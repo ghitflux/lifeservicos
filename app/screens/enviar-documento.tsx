@@ -56,24 +56,52 @@ export default function EnviarDocumento() {
       return;
     }
 
+    if (!selectedFile.uri && !selectedFile.fileCopyUri) {
+      showError('Erro', 'Não foi possível ler o arquivo selecionado');
+      return;
+    }
+
     setLoading(true);
+
+    const formData = new FormData();
+    const filename = selectedFile.name || selectedFile.fileName || `document_${Date.now()}.jpg`;
+
+    formData.append('document', {
+      // expo-image-picker usa uri, DocumentPicker usa fileCopyUri
+      uri: selectedFile.uri || selectedFile.fileCopyUri,
+      name: filename,
+      type: selectedFile.mimeType || selectedFile.type || 'application/octet-stream',
+    } as any);
+
+    formData.append('simulation_type', 'document_upload');
+    formData.append('document_type', documentType);
+
+    const uploadOnce = async () => api.post('/mobile/simulations/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 20000,
+    });
+
     try {
-      // Note: Backend currently only saves metadata (no actual file storage)
-      // In a production app, you would upload to S3/Cloudinary first, then send URL
-      const documentData = {
-        document_type: documentType,
-        file_name: selectedFile.name || selectedFile.fileName || `document_${Date.now()}.jpg`,
-        file_url: selectedFile.uri || '', // In production, this would be the S3 URL
-        file_size: selectedFile.size || selectedFile.fileSize || 0,
-        created_at: new Date().toISOString(), // Add timestamp for document creation
-      };
-
-      console.log('[Upload] Sending document:', documentData);
-      await api.post('/api/v1/documents', documentData);
-
-      showSuccess('Sucesso', 'Documento enviado com sucesso!');
-      setSelectedFile(null);
-      setDocumentType('');
+      try {
+        const response = await uploadOnce();
+        const message = response.data?.message || 'Documento enviado com sucesso!';
+        showSuccess('Sucesso', message);
+        setSelectedFile(null);
+        setDocumentType('');
+      } catch (error: any) {
+        // Re-tenta automaticamente uma vez em caso de erro de rede inicial (cenário observado)
+        const isNetworkError = error?.code === 'ERR_NETWORK' || error?.message === 'Network Error';
+        if (isNetworkError) {
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+          const response = await uploadOnce();
+          const message = response.data?.message || 'Documento enviado com sucesso!';
+          showSuccess('Sucesso', message);
+          setSelectedFile(null);
+          setDocumentType('');
+          return;
+        }
+        throw error;
+      }
     } catch (error: any) {
       console.error('[Upload] Error:', error);
       const errorMessage = String(error.response?.data?.detail || error.message || 'Erro ao enviar documento');

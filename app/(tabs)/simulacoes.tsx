@@ -4,9 +4,10 @@ import { useRouter } from 'expo-router';
 import { useState, useEffect, useCallback } from 'react';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/contexts/ThemeContext';
-import { typography, borderRadius, spacing } from '@/constants/theme';
+import { borderRadius, spacing } from '@/constants/theme';
 import { Header, MobileNav } from '@/components';
 import { api } from '@/services/api';
+import { mapSimulationStatus } from '@/utils/status';
 
 interface Simulation {
   id: string;
@@ -30,7 +31,7 @@ export default function Simulacoes() {
 
   const fetchSimulations = async () => {
     try {
-      const response = await api.get('/api/v1/simulations');
+      const response = await api.get('/mobile/simulations');
       setSimulations(response.data);
     } catch (error) {
       console.error('Error fetching simulations:', error);
@@ -65,21 +66,15 @@ export default function Simulacoes() {
   };
 
   const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'approved': return '#22c55e';
-      case 'pending': return '#f59e0b';
-      case 'rejected': return '#ef4444';
-      default: return colors.textSecondary;
-    }
+    const { tone } = mapSimulationStatus(status);
+    if (tone === 'success') return colors.success || '#22c55e';
+    if (tone === 'warning') return colors.warning || '#f59e0b';
+    if (tone === 'error') return colors.error || '#ef4444';
+    return colors.accent;
   };
 
   const getStatusText = (status: string) => {
-    switch (status) {
-      case 'approved': return 'Aprovada';
-      case 'pending': return 'Pendente';
-      case 'rejected': return 'Rejeitada';
-      default: return status;
-    }
+    return mapSimulationStatus(status).label;
   };
 
   if (loading) {

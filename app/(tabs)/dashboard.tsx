@@ -4,16 +4,15 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/contexts/ThemeContext';
-import { typography, borderRadius, spacing } from '@/constants/theme';
+import { borderRadius, spacing } from '@/constants/theme';
 import { Header, MobileNav } from '@/components';
 import { api } from '@/services/api';
-import { useAuth } from '@/hooks/useAuth';
+import { mapSimulationStatus } from '@/utils/status';
 
 export default function Dashboard() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
-  const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [dashboardData, setDashboardData] = useState<any>({
@@ -28,25 +27,27 @@ export default function Dashboard() {
 
   const fetchDashboardData = async () => {
     try {
-      // Fetch all data in parallel
-      const [simulations, documents, margins] = await Promise.all([
-        api.get('/api/v1/simulations').catch(() => ({ data: [] })),
-        api.get('/api/v1/documents').catch(() => ({ data: [] })),
-        api.get('/api/v1/margins/current').catch(() => ({ data: null })),
+      const [simulationsRes, margins] = await Promise.all([
+        api.get('/mobile/simulations').catch(() => ({ data: [] })),
+        api.get('/mobile/margins/current').catch(() => ({ data: null })),
       ]);
 
-      // Get latest pending simulation
-      const latestPending = simulations.data.find((s: any) => s.status === 'pending');
+      const simulations = Array.isArray(simulationsRes.data) ? simulationsRes.data : [];
 
-      // Combine and sort documents and simulations by date for recent activity
-      const allActivity = [
-        ...documents.data.map((d: any) => ({ ...d, type: 'document' })),
-        ...simulations.data.map((s: any) => ({ ...s, type: 'simulation' })),
-      ].sort((a: any, b: any) => {
-        const dateA = new Date(a.created_at || a.createdAt || 0).getTime();
-        const dateB = new Date(b.created_at || b.createdAt || 0).getTime();
-        return dateB - dateA;
-      }).slice(0, 5); // Get last 5 activities
+      // Get latest pending simulation
+      const latestPending = simulations.find((s: any) =>
+        ['pending', 'simulation_requested'].includes((s.status || '').toLowerCase())
+      );
+
+      // Recent activity: last simulations sorted by creation date
+      const allActivity = simulations
+        .map((s: any) => ({ ...s, type: 'simulation' }))
+        .sort((a: any, b: any) => {
+          const dateA = new Date(a.created_at || a.createdAt || 0).getTime();
+          const dateB = new Date(b.created_at || b.createdAt || 0).getTime();
+          return dateB - dateA;
+        })
+        .slice(0, 5);
 
       setDashboardData({
         margin: margins.data,
@@ -80,6 +81,13 @@ export default function Dashboard() {
 
   const handleAjuda = () => {
     router.push('/screens/ajuda-suporte');
+  };
+
+  const getToneColor = (tone: string) => {
+    if (tone === 'success') return colors.success || '#22c55e';
+    if (tone === 'warning') return colors.warning || '#f59e0b';
+    if (tone === 'error') return colors.error || '#ef4444';
+    return colors.accent;
   };
 
   if (loading) {
@@ -169,28 +177,43 @@ export default function Dashboard() {
               <Text style={[styles.seeAllLink, { color: colors.accent }]}>Ver Tudo</Text>
             </Pressable>
           </View>
-          {dashboardData.recentActivity.map((activity: any) => (
-            <View key={`${activity.type}-${activity.id}`} style={[styles.activityCard, { backgroundColor: colors.card }]}>
-              <View style={[styles.activityIcon, { backgroundColor: activity.type === 'document' ? colors.accent + '20' : colors.warning + '20' }]}>
-                <Ionicons
-                  name={activity.type === 'document' ? 'document' : 'time'}
-                  size={20}
-                  color={activity.type === 'document' ? colors.accent : colors.warning}
-                />
-              </View>
-              <View style={styles.activityContent}>
-                <Text style={[styles.activityTitle, { color: colors.text }]}>
-                  {activity.type === 'document' ? activity.document_type : `Simulação #${activity.id.substring(0, 8)}`}
+          {dashboardData.recentActivity.map((activity: any) => {
+            const statusMeta = mapSimulationStatus(activity.status);
+            const statusColor = getToneColor(statusMeta.tone);
+
+            return (
+              <Pressable
+                key={`sim-${activity.id}`}
+                style={({ pressed }) => [
+                  styles.activityCard,
+                  { backgroundColor: colors.card, opacity: pressed ? 0.7 : 1 }
+                ]}
+                onPress={() => router.push({
+                  pathname: '/screens/detalhes-simulacao',
+                  params: { id: activity.id }
+                })}
+              >
+                <View style={[styles.activityIcon, { backgroundColor: colors.accent + '20' }]}>
+                  <Ionicons
+                    name="calculator-outline"
+                    size={20}
+                    color={colors.accent}
+                  />
+                </View>
+                <View style={styles.activityContent}>
+                  <Text style={[styles.activityTitle, { color: colors.text }]}>
+                    {`Simulação #${String(activity.id).substring(0, 8)}`}
+                  </Text>
+                  <Text style={[styles.activitySubtitle, { color: colors.textSecondary }]}>
+                    {activity.requested_amount ? `R$ ${activity.requested_amount.toFixed(2).replace('.', ',')}` : 'Sem valor informado'}
+                  </Text>
+                </View>
+                <Text style={[styles.activityStatus, { color: statusColor }]}>
+                  {statusMeta.label}
                 </Text>
-                <Text style={[styles.activitySubtitle, { color: colors.textSecondary }]}>
-                  {activity.type === 'document' ? activity.file_name : `R$ ${activity.requested_amount?.toFixed(2).replace('.', ',')}`}
-                </Text>
-              </View>
-              <Text style={[styles.activityStatus, { color: activity.status === 'approved' ? colors.success : activity.status === 'rejected' ? colors.error : colors.warning }]}>
-                {activity.status === 'pending' ? 'Pendente' : activity.status === 'approved' ? 'Aprovado' : 'Rejeitado'}
-              </Text>
-            </View>
-          ))}
+              </Pressable>
+            );
+          })}
         </View>
       )}
       </ScrollView>

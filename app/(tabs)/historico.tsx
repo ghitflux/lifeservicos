@@ -8,6 +8,7 @@ import { borderRadius, spacing } from '@/constants/theme';
 import { Header, MobileNav } from '@/components';
 import { api } from '@/services/api';
 import { formatDateSafe } from '@/utils/formatters';
+import { mapSimulationStatus } from '@/utils/status';
 
 interface Simulation {
   id: string;
@@ -22,23 +23,11 @@ interface Simulation {
   type: 'simulation';
 }
 
-interface Document {
-  id: string;
-  document_type: string;
-  file_name: string;
-  status: string;
-  created_at?: string | null;
-  uploaded_at: string;
-  type: 'document';
-}
-
-type HistoryItem = Simulation | Document;
-
 export default function Historico() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
-  const [items, setItems] = useState<HistoryItem[]>([]);
+  const [items, setItems] = useState<Simulation[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -48,34 +37,17 @@ export default function Historico() {
 
   const fetchHistory = async () => {
     try {
-      const [simulationsRes, documentsRes] = await Promise.all([
-        api.get('/api/v1/simulations').catch(() => ({ data: [] })),
-        api.get('/api/v1/documents').catch(() => ({ data: [] })),
-      ]);
-
-      // Add type field to distinguish between items
-      const simulationsWithType: Simulation[] = simulationsRes.data.map((sim: any) => ({
+      const simulationsRes = await api.get('/mobile/simulations').catch(() => ({ data: [] }));
+      const simulationsWithType: Simulation[] = (simulationsRes.data || []).map((sim: any) => ({
         ...sim,
         type: 'simulation' as const,
       }));
 
-      const documentsWithType: Document[] = documentsRes.data.map((doc: any) => ({
-        ...doc,
-        type: 'document' as const,
-      }));
-
-      // Combine and sort by creation date (newest first)
-      const combined = [...simulationsWithType, ...documentsWithType].sort(
-        (a: HistoryItem, b: HistoryItem) => {
-          const dateA = a.type === 'document'
-            ? (a.created_at || a.uploaded_at)
-            : a.created_at;
-          const dateB = b.type === 'document'
-            ? (b.created_at || b.uploaded_at)
-            : b.created_at;
-          return new Date(dateB).getTime() - new Date(dateA).getTime();
-        }
-      );
+      const combined = simulationsWithType.sort((a, b) => {
+        const dateA = new Date(a.created_at).getTime();
+        const dateB = new Date(b.created_at).getTime();
+        return dateB - dateA;
+      });
 
       setItems(combined);
     } catch (error) {
@@ -96,42 +68,11 @@ export default function Historico() {
   };
 
   const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'approved':
-        return colors.success || '#22c55e';
-      case 'rejected':
-        return colors.error || '#ef4444';
-      case 'pending':
-        return colors.warning || '#f59e0b';
-      default:
-        return colors.textSecondary;
-    }
-  };
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'approved':
-        return 'checkmark-circle';
-      case 'rejected':
-        return 'close-circle';
-      case 'pending':
-        return 'time';
-      default:
-        return 'information-circle';
-    }
-  };
-
-  const getStatusText = (status: string) => {
-    switch (status) {
-      case 'approved':
-        return 'Aprovado';
-      case 'rejected':
-        return 'Rejeitado';
-      case 'pending':
-        return 'Em Análise';
-      default:
-        return status;
-    }
+    const tone = mapSimulationStatus(status).tone;
+    if (tone === 'success') return colors.success || '#22c55e';
+    if (tone === 'warning') return colors.warning || '#f59e0b';
+    if (tone === 'error') return colors.error || '#ef4444';
+    return colors.accent;
   };
 
   if (loading) {
@@ -172,100 +113,67 @@ export default function Historico() {
             </Text>
           </View>
         ) : (
-          items.map((item) => {
-            const statusColor = getStatusColor(item.status);
+          items.map((simulation) => {
+            const statusMeta = mapSimulationStatus(simulation.status);
+            const statusColor = getStatusColor(simulation.status);
+            const statusIcon =
+              statusMeta.tone === 'success'
+                ? 'checkmark-circle'
+                : statusMeta.tone === 'error'
+                  ? 'close-circle'
+                  : statusMeta.tone === 'warning'
+                    ? 'time'
+                    : 'information-circle';
 
-            if (item.type === 'document') {
-              const document = item as Document;
-              return (
-                <View
-                  key={`doc-${document.id}`}
-                  style={[styles.card, { backgroundColor: colors.card }]}
-                >
-                  <View style={styles.cardContent}>
-                    <View style={styles.cardHeader}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={[styles.cardType, { color: colors.text }]}>
-                          📄 Documento Enviado
-                        </Text>
-                        <Text style={[styles.cardAmount, { color: colors.accent }]}>
-                          {document.document_type}
-                        </Text>
-                        <Text style={[styles.cardSubtext, { color: colors.textSecondary, marginTop: 4 }]}>
-                          {document.file_name}
-                        </Text>
-                      </View>
-                      <View style={[styles.statusIcon, { borderColor: statusColor }]}>
-                        <Ionicons
-                          name={getStatusIcon(document.status) as any}
-                          size={24}
-                          color={statusColor}
-                        />
-                      </View>
-                    </View>
-                    <View style={styles.cardFooter}>
-                      <Text style={[styles.cardStatus, { color: statusColor }]}>
-                        {getStatusText(document.status)}
+            const handleNavigateToDetails = () => {
+              router.push({
+                pathname: '/screens/detalhes-simulacao',
+                params: { id: simulation.id }
+              });
+            };
+
+            return (
+              <Pressable
+                key={`sim-${simulation.id}`}
+                style={[styles.card, { backgroundColor: colors.card }]}
+                onPress={handleNavigateToDetails}
+              >
+                <View style={styles.cardContent}>
+                  <View style={styles.cardHeader}>
+                    <View>
+                      <Text style={[styles.cardType, { color: colors.text }]}>
+                        {simulation.simulation_type} #{simulation.id.substring(0, 8)}
                       </Text>
-                      <Text style={[styles.cardDate, { color: colors.textSecondary }]}>
-                        {formatDateSafe(document.created_at || document.uploaded_at)}
+                      <Text style={[styles.cardAmount, { color: colors.accent }]}>
+                        R$ {simulation.requested_amount.toFixed(2).replace('.', ',')}
                       </Text>
                     </View>
+                    <View style={[styles.statusIcon, { borderColor: statusColor }]}>
+                      <Ionicons
+                        name={statusIcon as any}
+                        size={24}
+                        color={statusColor}
+                      />
+                    </View>
+                  </View>
+                  <View style={styles.cardFooter}>
+                    <Text style={[styles.cardStatus, { color: statusColor }]}>
+                      {statusMeta.label}
+                    </Text>
+                    <Text style={[styles.cardDate, { color: colors.textSecondary }]}>
+                      {formatDateSafe(simulation.created_at)}
+                    </Text>
                   </View>
                 </View>
-              );
-            } else {
-              const simulation = item as Simulation;
-              const handleNavigateToDetails = () => {
-                router.push({
-                  pathname: '/screens/detalhes-simulacao',
-                  params: { id: simulation.id }
-                });
-              };
-
-              return (
                 <Pressable
-                  key={`sim-${simulation.id}`}
-                  style={[styles.card, { backgroundColor: colors.card }]}
+                  style={[styles.cardAction, { borderTopColor: colors.border }]}
                   onPress={handleNavigateToDetails}
                 >
-                  <View style={styles.cardContent}>
-                    <View style={styles.cardHeader}>
-                      <View>
-                        <Text style={[styles.cardType, { color: colors.text }]}>
-                          {simulation.simulation_type} #{simulation.id.substring(0, 8)}
-                        </Text>
-                        <Text style={[styles.cardAmount, { color: colors.accent }]}>
-                          R$ {simulation.requested_amount.toFixed(2).replace('.', ',')}
-                        </Text>
-                      </View>
-                      <View style={[styles.statusIcon, { borderColor: statusColor }]}>
-                        <Ionicons
-                          name={getStatusIcon(simulation.status) as any}
-                          size={24}
-                          color={statusColor}
-                        />
-                      </View>
-                    </View>
-                    <View style={styles.cardFooter}>
-                      <Text style={[styles.cardStatus, { color: statusColor }]}>
-                        {getStatusText(simulation.status)}
-                      </Text>
-                      <Text style={[styles.cardDate, { color: colors.textSecondary }]}>
-                        {formatDateSafe(simulation.created_at)}
-                      </Text>
-                    </View>
-                  </View>
-                  <Pressable
-                    style={[styles.cardAction, { borderTopColor: colors.border }]}
-                    onPress={handleNavigateToDetails}
-                  >
-                    <Text style={[styles.cardActionText, { color: colors.accent }]}>Ver Detalhes</Text>
-                    <Ionicons name="chevron-forward" size={16} color={colors.accent} />
-                  </Pressable>
+                  <Text style={[styles.cardActionText, { color: colors.accent }]}>Ver Detalhes</Text>
+                  <Ionicons name="chevron-forward" size={16} color={colors.accent} />
                 </Pressable>
-              );
-            }
+              </Pressable>
+            );
           })
         )}
       </ScrollView>

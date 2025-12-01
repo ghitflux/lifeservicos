@@ -33,10 +33,12 @@ export default function Notificacoes() {
 
   const fetchNotifications = async () => {
     try {
-      const response = await api.get('/api/v1/notifications');
-      setNotifications(response.data);
-    } catch (error) {
-      console.error('Error fetching notifications:', error);
+      const response = await api.get('/notifications');
+      const data = response.data?.items || response.data || [];
+      setNotifications(Array.isArray(data) ? data : []);
+    } catch (error: any) {
+      console.log('Notifications endpoint indisponível, exibindo lista vazia.', error?.response?.status);
+      setNotifications([]);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -56,7 +58,7 @@ export default function Notificacoes() {
 
   const markAsRead = async (id: string) => {
     try {
-      await api.put(`/api/v1/notifications/${id}/read`);
+      await api.put(`/notifications/${id}/read`).catch(() => null);
       setNotifications(prev =>
         prev.map(notif =>
           notif.id === id ? { ...notif, is_read: true } : notif
@@ -77,7 +79,7 @@ export default function Notificacoes() {
     try {
       // Mark all unread notifications as read
       const unreadIds = notifications.filter(n => !n.is_read).map(n => n.id);
-      await Promise.all(unreadIds.map(id => api.put(`/api/v1/notifications/${id}/read`)));
+      await Promise.all(unreadIds.map(id => api.put(`/notifications/${id}/read`).catch(() => null)));
 
       setNotifications(prev =>
         prev.map(notif => ({ ...notif, is_read: true }))

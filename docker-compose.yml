@@ -3,7 +3,6 @@ version: '3.8'
 services:
   postgres:
     image: postgres:16
-    container_name: applife_postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: applife
@@ -19,23 +18,43 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - life-net
 
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: applife_backend
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql://applife:applife_password@postgres:5432/applife_db
+      WEB_API_URL: http://api:8000 # API do life-system para sincronizar cadastro mobile
     ports:
-      - "8000:8000"
+      - "8001:8000" # Porta ajustada para não conflitar com o backend do life-system
     depends_on:
       postgres:
         condition: service_healthy
     volumes:
       - ./backend:/app
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    networks:
+      - life-net
+
+  mobile-app:
+    image: node:20
+    working_dir: /app
+    volumes:
+      - ./:/app
+    environment:
+      - API_URL=http://api:8000
+      - NEXT_PUBLIC_API_BASE_URL=http://api:8000
+    command: sh -c "npm install && npm run web"
+    ports:
+      - "19006:19006"
+    depends_on:
+      - postgres
+    networks:
+      - life-net
 
   pgadmin:
     image: dpage/pgadmin4:latest
@@ -56,3 +75,8 @@ volumes:
     driver: local
   pgadmin_data:
     driver: local
+
+networks:
+  life-net:
+    external: true
+    name: life-net

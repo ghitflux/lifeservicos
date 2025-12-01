@@ -3,9 +3,12 @@ import * as SecureStore from 'expo-secure-store';
 import { api } from '../services/api';
 
 interface User {
-  id: string;
+  id: string | number;
   email: string;
   name: string;
+  role?: string;
+  cpf?: string;
+  phone?: string;
 }
 
 export function useAuth() {
@@ -18,16 +21,17 @@ export function useAuth() {
 
   const loadUser = async () => {
     try {
+      // Tenta reaproveitar token bearer se existir, mas o backend usa cookies HttpOnly por padrão
       const token = await SecureStore.getItemAsync('authToken');
-      if (token) {
-        // Fetch user data from backend
-        const response = await api.get('/api/v1/users/me');
-        setUser(response.data);
+      if (!token) {
+        await SecureStore.deleteItemAsync('authToken');
       }
+
+      const response = await api.get('/auth/me');
+      setUser(response.data);
     } catch (error) {
-      console.error('Error loading user:', error);
-      // If token is invalid, clear it
       await SecureStore.deleteItemAsync('authToken');
+      setUser(null);
     } finally {
       setLoading(false);
     }
@@ -35,26 +39,26 @@ export function useAuth() {
 
   const login = async (email: string, password: string) => {
     try {
-      console.log('[Auth] Attempting login...');
-      // Call backend login endpoint
-      const response = await api.post('/api/v1/auth/login', { email, password });
-      const { access_token } = response.data;
+      const response = await api.post('/auth/login', { email, password });
 
-      // Store token
-      await SecureStore.setItemAsync('authToken', access_token);
+      // Se o backend algum dia retornar um bearer token no body, guardamos para reutilizar
+      const possibleToken = (response.data as any)?.access_token;
+      if (possibleToken) {
+        await SecureStore.setItemAsync('authToken', possibleToken);
+      } else {
+        await SecureStore.deleteItemAsync('authToken');
+      }
 
-      // Fetch user data
-      const userResponse = await api.get('/api/v1/users/me');
+      // Garantir que temos os dados completos do usuário
+      const userResponse = await api.get('/auth/me');
       setUser(userResponse.data);
 
-      console.log('[Auth] Login successful');
       return { success: true };
     } catch (error: any) {
-      console.error('[Auth] Login error:', error);
       let message = 'Erro ao fazer login';
 
       if (error.code === 'ERR_NETWORK' || error.message === 'Network Error') {
-        message = 'Erro de conexão. Verifique se o backend está rodando.';
+        message = 'Erro de conexão. Verifique se o backend web está acessível.';
       } else if (error.response?.data?.detail) {
         message = error.response.data.detail;
       }
@@ -65,18 +69,13 @@ export function useAuth() {
 
   const register = async (data: { name: string; email: string; password: string; cpf?: string; phone?: string }) => {
     try {
-      console.log('[Auth] Attempting registration...');
-      // Call backend register endpoint
-      await api.post('/api/v1/auth/register', data);
-      // Backend doesn't auto-login, so user needs to login after registration
-      console.log('[Auth] Registration successful');
+      await api.post('/mobile/register', data);
       return { success: true };
     } catch (error: any) {
-      console.error('[Auth] Register error:', error);
       let message = 'Erro ao criar conta';
 
       if (error.code === 'ERR_NETWORK' || error.message === 'Network Error') {
-        message = 'Erro de conexão. Verifique se o backend está rodando.';
+        message = 'Erro de conexão. Verifique se o backend web está acessível.';
       } else if (error.response?.data?.detail) {
         message = error.response.data.detail;
       }
@@ -87,6 +86,7 @@ export function useAuth() {
 
   const logout = async () => {
     try {
+      await api.post('/auth/logout').catch(() => null);
       await SecureStore.deleteItemAsync('authToken');
       setUser(null);
     } catch (error) {

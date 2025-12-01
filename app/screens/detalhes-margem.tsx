@@ -2,7 +2,7 @@ import { View, Text, StyleSheet, ScrollView, ActivityIndicator } from 'react-nat
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/contexts/ThemeContext';
-import { typography, borderRadius, spacing } from '@/constants/theme';
+import { borderRadius, spacing } from '@/constants/theme';
 import { Header, MobileNav } from '@/components';
 import { formatCurrency } from '@/utils/formatters';
 import { api } from '@/services/api';
@@ -33,7 +33,7 @@ export default function DetalhesMargem() {
 
   const fetchMarginData = async () => {
     try {
-      const response = await api.get('/api/v1/margins/current');
+      const response = await api.get('/mobile/margins/current');
       const data = response.data;
 
       setMarginData({

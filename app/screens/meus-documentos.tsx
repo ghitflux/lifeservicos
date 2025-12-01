@@ -1,27 +1,32 @@
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, RefreshControl, Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Header, MobileNav } from '@/components';
+import { Header, MobileNav, AlertDialog } from '@/components';
 import { useTheme } from '@/contexts/ThemeContext';
 import { borderRadius, spacing } from '@/constants/theme';
 import { api } from '@/services/api';
 import { formatDateSafe } from '@/utils/formatters';
+import { mapSimulationStatus } from '@/utils/status';
+import { useAlert } from '@/hooks/useAlert';
 
 interface Document {
   id: string;
   document_type: string;
-  file_name: string;
+  document_filename: string;
   status: string;
   created_at: string;
+  document_url?: string;
 }
 
 export default function MeusDocumentos() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
+  const { alert, showError, dismissAlert } = useAlert();
   const [documents, setDocuments] = useState<Document[]>([]);
+  const [infoMessage, setInfoMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -31,10 +36,14 @@ export default function MeusDocumentos() {
 
   const fetchDocuments = async () => {
     try {
-      const response = await api.get('/api/v1/documents');
-      setDocuments(response.data);
-    } catch (error) {
+      const response = await api.get('/mobile/documents');
+      const docs = response.data || [];
+      setDocuments(docs);
+      setInfoMessage(null);
+    } catch (error: any) {
       console.error('Error fetching documents:', error);
+      setInfoMessage('Não foi possível carregar seus anexos. Tente novamente ou envie pelo módulo web.');
+      setDocuments([]);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -47,20 +56,24 @@ export default function MeusDocumentos() {
   }, []);
 
   const getStatusText = (status: string) => {
-    switch (status) {
-      case 'pending': return 'Aguardando análise';
-      case 'approved': return 'Aprovado';
-      case 'rejected': return 'Rejeitado';
-      default: return status;
-    }
+    return mapSimulationStatus(status).label;
   };
 
   const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'pending': return colors.warning || '#f59e0b';
-      case 'approved': return colors.success || '#22c55e';
-      case 'rejected': return colors.error || '#ef4444';
-      default: return colors.textSecondary;
+    const tone = mapSimulationStatus(status).tone;
+    if (tone === 'success') return colors.success || '#22c55e';
+    if (tone === 'warning') return colors.warning || '#f59e0b';
+    if (tone === 'error') return colors.error || '#ef4444';
+    return colors.accent;
+  };
+
+  const handleDownload = async (doc: Document) => {
+    const base = api.defaults.baseURL?.replace(/\/$/, '') || '';
+    const url = `${base}/mobile/documents/${doc.id}`;
+    try {
+      await Linking.openURL(url);
+    } catch (_e) {
+      showError('Erro', 'Não foi possível abrir o documento');
     }
   };
 
@@ -103,14 +116,19 @@ export default function MeusDocumentos() {
             <Text style={[styles.emptySubtext, { color: colors.textSecondary }]}>
               Envie seus documentos para agilizar o processo
             </Text>
+            {infoMessage && (
+              <Text style={[styles.emptySubtext, { color: colors.textSecondary, marginTop: spacing.sm }]}>
+                {infoMessage}
+              </Text>
+            )}
           </View>
         ) : (
           documents.map((doc) => (
-            <View key={doc.id} style={[styles.documentCard, { backgroundColor: colors.card }]}>
+            <Pressable key={doc.id} style={[styles.documentCard, { backgroundColor: colors.card }]} onPress={() => handleDownload(doc)}>
               <Ionicons name="document" size={24} color={colors.accent} />
               <View style={styles.documentInfo}>
                 <Text style={[styles.documentName, { color: colors.text }]}>
-                  {doc.document_type} - {doc.file_name}
+                  {doc.document_type || 'Documento'} - {doc.document_filename}
                 </Text>
                 <Text style={[styles.documentStatus, { color: getStatusColor(doc.status) }]}>
                   {getStatusText(doc.status)}
@@ -119,13 +137,25 @@ export default function MeusDocumentos() {
                   {formatDateSafe(doc.created_at)}
                 </Text>
               </View>
-              <Ionicons name="checkmark-circle" size={20} color={getStatusColor(doc.status)} />
-            </View>
+              <Ionicons name="download" size={20} color={colors.accent} />
+            </Pressable>
           ))
         )}
       </ScrollView>
       
       <MobileNav />
+
+      {alert && (
+        <AlertDialog
+          visible={!!alert}
+          title={alert.title}
+          message={alert.message}
+          buttons={alert.buttons}
+          icon={alert.icon as any}
+          iconColor={alert.iconColor}
+          onDismiss={dismissAlert}
+        />
+      )}
     </SafeAreaView>
   );
 }

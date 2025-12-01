@@ -23,8 +23,21 @@ export default function Register() {
 
   const handleRegister = async () => {
     // Validations
-    if (!name || !email || !password || !confirmPassword) {
+    const cpfNumbers = cpf.replace(/\D/g, '');
+    const phoneNumbers = whatsapp.replace(/\D/g, '');
+
+    if (!name || !email || !password || !confirmPassword || !cpfNumbers || !phoneNumbers) {
       showError('Erro', 'Por favor, preencha todos os campos');
+      return;
+    }
+
+    if (cpfNumbers.length !== 11) {
+      showError('Erro', 'CPF inválido. Digite 11 dígitos.');
+      return;
+    }
+
+    if (phoneNumbers.length < 10) {
+      showError('Erro', 'Informe um WhatsApp válido');
       return;
     }
 
@@ -39,7 +52,13 @@ export default function Register() {
     }
 
     setLoading(true);
-    const result = await register({ name, email, password });
+    const result = await register({
+      name,
+      email,
+      password,
+      cpf: cpfNumbers,
+      phone: phoneNumbers,
+    });
     setLoading(false);
 
     if (result.success) {

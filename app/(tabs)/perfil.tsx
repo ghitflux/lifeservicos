@@ -3,7 +3,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/contexts/ThemeContext';
-import { typography, borderRadius, spacing } from '@/constants/theme';
+import { borderRadius, spacing } from '@/constants/theme';
 import { Header, MobileNav } from '@/components';
 import { useAuth } from '@/hooks/useAuth';
 import { api } from '@/services/api';
@@ -25,8 +25,8 @@ export default function Perfil() {
     try {
       setLoading(true);
       const [simulationsRes, marginsRes] = await Promise.all([
-        api.get('/api/v1/simulations'),
-        api.get('/api/v1/margins/current'),
+        api.get('/mobile/simulations').catch(() => ({ data: [] })),
+        api.get('/mobile/margins/current').catch(() => ({ data: null })),
       ]);
 
       const simulations = simulationsRes.data?.length || 0;
@@ -134,6 +134,18 @@ export default function Perfil() {
             <View style={styles.menuContent}>
               <Text style={[styles.menuText, { color: colors.text }]}>Notificações</Text>
               <Text style={[styles.menuSubtext, { color: colors.textSecondary }]}>Gerencie suas preferências</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
+          </Pressable>
+
+          <Pressable
+            style={[styles.menuItem, { backgroundColor: colors.card }]}
+            onPress={() => router.push('/screens/contratos-mobile')}
+          >
+            <Ionicons name="briefcase-outline" size={24} color={colors.text} />
+            <View style={styles.menuContent}>
+              <Text style={[styles.menuText, { color: colors.text }]}>Contratos Mobile (Financeiro)</Text>
+              <Text style={[styles.menuSubtext, { color: colors.textSecondary }]}>Fila financeira mobile</Text>
             </View>
             <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
           </Pressable>

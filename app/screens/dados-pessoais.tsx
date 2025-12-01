@@ -1,11 +1,10 @@
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Alert } from 'react-native';
 import { useState, useEffect } from 'react';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Input, Button, Header, MobileNav } from '@/components';
 import { useTheme } from '@/contexts/ThemeContext';
 import { borderRadius, spacing } from '@/constants/theme';
 import { useAuth } from '@/hooks/useAuth';
-import { api } from '@/services/api';
 
 export default function DadosPessoais() {
   const insets = useSafeAreaInsets();
@@ -41,26 +40,6 @@ export default function DadosPessoais() {
         setPhone(user.phone || '');
         setCpf(user.cpf || '');
       }
-
-      // Carregar dados de endereço do backend (se disponível)
-      if (user?.id) {
-        try {
-          const profileRes = await api.get('/api/v1/users/profile');
-          if (profileRes.data) {
-            const profile = profileRes.data;
-            setCep(profile.address_zipcode || '');
-            setStreet(profile.address_street || '');
-            setNumber(profile.address_number || '');
-            setComplement(profile.address_complement || '');
-            setNeighborhood(profile.address_neighborhood || '');
-            setCity(profile.address_city || '');
-            setState(profile.address_state || '');
-          }
-        } catch (error) {
-          // Endpoint pode não existir, continuar com dados básicos
-          console.log('Profile endpoint não disponível');
-        }
-      }
     } catch (error) {
       console.error('Erro ao carregar dados:', error);
     } finally {
@@ -69,45 +48,12 @@ export default function DadosPessoais() {
   };
 
   const handleSave = async () => {
-    try {
-      setSaving(true);
-
-      const updateData = {
-        name,
-        phone,
-      };
-
-      const addressData = {
-        address_zipcode: cep,
-        address_street: street,
-        address_number: number,
-        address_complement: complement,
-        address_neighborhood: neighborhood,
-        address_city: city,
-        address_state: state,
-      };
-
-      // Tentar atualizar dados básicos
-      try {
-        await api.put('/api/v1/users/me', updateData);
-      } catch (error) {
-        console.log('Erro ao atualizar dados básicos:', error);
-      }
-
-      // Tentar atualizar endereço
-      try {
-        await api.put('/api/v1/users/profile', addressData);
-      } catch (error) {
-        console.log('Erro ao atualizar endereço:', error);
-      }
-
-      // Recarregar dados após salvar
-      await loadUserData();
-    } catch (error) {
-      console.error('Erro ao salvar:', error);
-    } finally {
-      setSaving(false);
-    }
+    setSaving(true);
+    Alert.alert(
+      'Atualização pelo app',
+      'A edição de dados pessoais ainda não está exposta pelo backend mobile. Atualize pelo módulo web ou contate o suporte.'
+    );
+    setSaving(false);
   };
 
   if (loading) {
