@@ -21,6 +21,14 @@ interface Simulation {
   status: string;
   created_at: string;
   type: 'simulation';
+  product?: {
+    id: string;
+    name: string;
+  };
+  bank?: {
+    id: string;
+    name: string;
+  };
 }
 
 export default function Historico() {
@@ -77,7 +85,7 @@ export default function Historico() {
 
   if (loading) {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={[]}>
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
         <Header title="Histórico" subtitle="Acompanhe suas simulações" showBackButton onBackPress={handleBack} />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.accent} />
@@ -89,12 +97,12 @@ export default function Historico() {
   }
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={[]}>
-      <Header 
-        title="Histórico" 
-        subtitle="Acompanhe suas simulações" 
-        showBackButton 
-        onBackPress={handleBack} 
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
+      <Header
+        title="Histórico"
+        subtitle="Acompanhe suas simulações"
+        showBackButton
+        onBackPress={handleBack}
       />
 
       <ScrollView
@@ -140,12 +148,20 @@ export default function Historico() {
               >
                 <View style={styles.cardContent}>
                   <View style={styles.cardHeader}>
-                    <View>
+                    <View style={{ flex: 1 }}>
                       <Text style={[styles.cardType, { color: colors.text }]}>
-                        {simulation.simulation_type} #{simulation.id.substring(0, 8)}
+                        {simulation.product?.name || simulation.simulation_type || 'Simulação'}
                       </Text>
+                      {simulation.bank?.name && (
+                        <Text style={[styles.cardBank, { color: colors.textSecondary }]}>
+                          {simulation.bank.name}
+                        </Text>
+                      )}
                       <Text style={[styles.cardAmount, { color: colors.accent }]}>
-                        R$ {simulation.requested_amount.toFixed(2).replace('.', ',')}
+                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(simulation.requested_amount)}
+                      </Text>
+                      <Text style={[styles.cardSubtext, { color: colors.textSecondary }]}>
+                        Valor liberado para o cliente
                       </Text>
                     </View>
                     <View style={[styles.statusIcon, { borderColor: statusColor }]}>
@@ -215,14 +231,21 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   cardType: {
-    fontSize: 16,
-    marginBottom: 4,
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  cardBank: {
+    fontSize: 13,
+    marginBottom: 8,
   },
   cardAmount: {
-    fontSize: 20,
+    fontSize: 28,
+    fontWeight: '800',
+    marginBottom: 4,
   },
   cardSubtext: {
-    fontSize: 12,
+    fontSize: 13,
   },
   statusIcon: {
     width: 40,

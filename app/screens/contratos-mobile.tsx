@@ -10,85 +10,49 @@ import { useAlert } from '@/hooks/useAlert';
 import { mapSimulationStatus } from '@/utils/status';
 import { formatCurrency } from '@/utils/formatters';
 
-interface FinanceItem {
+interface Contract {
   id: string;
   status: string;
   requested_amount: number;
   total_amount: number;
   installments: number;
+  installment_value: number;
+  interest_rate: number;
   created_at: string;
-  user?: { id: number; name: string; email: string };
-  banks?: any[];
-  percentual_consultoria?: number;
-  seguro?: number;
+  disbursed_at?: string;
+  product?: { id: string; name: string };
+  bank?: { id: string; name: string };
 }
 
 export default function ContratosMobile() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  const { alert, showConfirm, showDestructive, showSuccess, showError, dismissAlert } = useAlert();
-  const [items, setItems] = useState<FinanceItem[]>([]);
+  const { alert, dismissAlert } = useAlert();
+  const [items, setItems] = useState<Contract[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [actioningId, setActioningId] = useState<string | null>(null);
 
-  const fetchQueue = async () => {
+  const fetchContracts = async () => {
     try {
-      const response = await api.get('/finance/mobile/queue');
-      const data = response.data?.items || [];
+      const response = await api.get('/mobile/contracts');
+      const data = response.data || [];
       setItems(data);
     } catch (error: any) {
-      console.error('Erro ao carregar fila financeira mobile:', error?.response?.data || error?.message);
-      showError('Erro', error?.response?.data?.detail || 'Não foi possível carregar a fila financeira mobile');
+      console.error('Erro ao carregar contratos:', error?.response?.data || error?.message);
     } finally {
       setLoading(false);
       setRefreshing(false);
-      setActioningId(null);
     }
   };
 
   useEffect(() => {
-    fetchQueue();
+    fetchContracts();
   }, []);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    fetchQueue();
+    fetchContracts();
   }, []);
-
-  const actionWrapper = async (fn: () => Promise<void>) => {
-    try {
-      await fn();
-      await fetchQueue();
-    } catch (error: any) {
-      const msg = error?.response?.data?.detail || 'Ação não concluída';
-      showError('Erro', msg);
-    }
-  };
-
-  const handleApprove = (id: string) => {
-    showConfirm('Enviar ao Financeiro', 'Confirmar envio desta simulação para o financeiro?', async () => {
-      setActioningId(id);
-      await actionWrapper(() => api.post(`/finance/mobile/${id}/approve`));
-      showSuccess('Enviado', 'Simulação enviada ao financeiro');
-    });
-  };
-
-  const handleDisburse = (id: string) => {
-    showConfirm('Efetivar contrato', 'Confirmar efetivação do contrato e geração de receita?', async () => {
-      setActioningId(id);
-      await actionWrapper(() => api.post(`/finance/mobile/${id}/disburse`));
-      showSuccess('Efetivado', 'Contrato efetivado com sucesso');
-    });
-  };
-
-  const handleCancel = (id: string) => {
-    showDestructive('Cancelar simulação', 'Deseja cancelar esta simulação na fila financeira?', async () => {
-      setActioningId(id);
-      await actionWrapper(() => api.post(`/finance/mobile/${id}/cancel`));
-      showSuccess('Cancelada', 'Simulação cancelada');
-    });
-  };
 
   const getToneColor = (tone: string) => {
     if (tone === 'success') return colors.success || '#22c55e';
@@ -100,10 +64,10 @@ export default function ContratosMobile() {
   if (loading) {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
-        <Header title="Contratos Mobile" showBackButton />
+        <Header title="Meus Contratos" showBackButton />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.accent} />
-          <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Carregando fila financeira...</Text>
+          <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Carregando contratos...</Text>
         </View>
         <MobileNav />
       </SafeAreaView>
@@ -112,7 +76,7 @@ export default function ContratosMobile() {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
-      <Header title="Contratos Mobile" subtitle="Fila financeira (mobile)" showBackButton />
+      <Header title="Meus Contratos" subtitle="Contratos ativos e histórico" showBackButton />
       <ScrollView
         style={styles.content}
         contentContainerStyle={{ paddingBottom: 80 + insets.bottom }}
@@ -122,26 +86,25 @@ export default function ContratosMobile() {
       >
         {items.length === 0 ? (
           <View style={[styles.emptyState, { backgroundColor: colors.card }]}>
-            <Ionicons name="checkmark-done-circle" size={48} color={colors.textTertiary} />
-            <Text style={[styles.emptyText, { color: colors.text }]}>Nenhum contrato na fila</Text>
+            <Ionicons name="briefcase-outline" size={48} color={colors.textTertiary} />
+            <Text style={[styles.emptyText, { color: colors.text }]}>Nenhum contrato ainda</Text>
             <Text style={[styles.emptySubtext, { color: colors.textSecondary }]}>
-              Aprove simulações pelo app ou web para vê-las aqui
+              Seus contratos aparecerão aqui após a aprovação
             </Text>
           </View>
         ) : (
           items.map((item) => {
             const statusMeta = mapSimulationStatus(item.status);
             const statusColor = getToneColor(statusMeta.tone);
-            const isActing = actioningId === item.id;
             return (
               <View key={item.id} style={[styles.card, { backgroundColor: colors.card }]}>
                 <View style={styles.cardHeader}>
                   <View style={styles.cardTitleGroup}>
                     <Text style={[styles.cardTitle, { color: colors.text }]}>
-                      {item.user?.name || 'Cliente mobile'}
+                      {item.product?.name || 'Contrato'}
                     </Text>
                     <Text style={[styles.cardSubtitle, { color: colors.textSecondary }]}>
-                      #{item.id.substring(0, 8)} • {new Date(item.created_at || '').toLocaleDateString('pt-BR')}
+                      {item.bank?.name || 'Banco'} • #{item.id.substring(0, 8)}
                     </Text>
                   </View>
                   <View style={[styles.statusPill, { borderColor: statusColor, backgroundColor: statusColor + '20' }]}>
@@ -150,56 +113,27 @@ export default function ContratosMobile() {
                 </View>
 
                 <View style={styles.row}>
-                  <Text style={[styles.label, { color: colors.textSecondary }]}>Solicitado</Text>
+                  <Text style={[styles.label, { color: colors.textSecondary }]}>Valor Solicitado</Text>
                   <Text style={[styles.value, { color: colors.text }]}>{formatCurrency(item.requested_amount)}</Text>
                 </View>
                 <View style={styles.row}>
-                  <Text style={[styles.label, { color: colors.textSecondary }]}>Total</Text>
+                  <Text style={[styles.label, { color: colors.textSecondary }]}>Valor Total</Text>
                   <Text style={[styles.value, { color: colors.text }]}>{formatCurrency(item.total_amount)}</Text>
                 </View>
                 <View style={styles.row}>
                   <Text style={[styles.label, { color: colors.textSecondary }]}>Parcelas</Text>
-                  <Text style={[styles.value, { color: colors.text }]}>{item.installments}x</Text>
+                  <Text style={[styles.value, { color: colors.text }]}>{item.installments}x de {formatCurrency(item.installment_value)}</Text>
                 </View>
-
-                <View style={styles.actionsRow}>
-                  <Pressable
-                    style={[
-                      styles.actionButton,
-                      { borderColor: colors.error, backgroundColor: colors.card },
-                      isActing && { opacity: 0.6 },
-                    ]}
-                    disabled={isActing}
-                    onPress={() => handleCancel(item.id)}
-                  >
-                    <Ionicons name="close-circle" size={18} color={colors.error} />
-                    <Text style={[styles.actionText, { color: colors.error }]}>Cancelar</Text>
-                  </Pressable>
-                  <Pressable
-                    style={[
-                      styles.actionButton,
-                      { borderColor: colors.accent, backgroundColor: colors.card },
-                      isActing && { opacity: 0.6 },
-                    ]}
-                    disabled={isActing}
-                    onPress={() => handleApprove(item.id)}
-                  >
-                    <Ionicons name="send" size={18} color={colors.accent} />
-                    <Text style={[styles.actionText, { color: colors.accent }]}>Enviar ao Fin.</Text>
-                  </Pressable>
-                  <Pressable
-                    style={[
-                      styles.actionButton,
-                      { borderColor: colors.success, backgroundColor: colors.success + '20' },
-                      isActing && { opacity: 0.6 },
-                    ]}
-                    disabled={isActing}
-                    onPress={() => handleDisburse(item.id)}
-                  >
-                    <Ionicons name="checkmark-circle" size={18} color={colors.success} />
-                    <Text style={[styles.actionText, { color: colors.success }]}>Efetivar</Text>
-                  </Pressable>
+                <View style={styles.row}>
+                  <Text style={[styles.label, { color: colors.textSecondary }]}>Taxa de Juros</Text>
+                  <Text style={[styles.value, { color: colors.text }]}>{item.interest_rate.toFixed(2)}% a.m.</Text>
                 </View>
+                {item.disbursed_at && (
+                  <View style={styles.row}>
+                    <Text style={[styles.label, { color: colors.textSecondary }]}>Liberado em</Text>
+                    <Text style={[styles.value, { color: colors.text }]}>{new Date(item.disbursed_at).toLocaleDateString('pt-BR')}</Text>
+                  </View>
+                )}
               </View>
             );
           })

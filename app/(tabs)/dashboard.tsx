@@ -104,7 +104,7 @@ export default function Dashboard() {
   }
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top', 'bottom']}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
       <Header />
       <ScrollView
         style={styles.scrollView}

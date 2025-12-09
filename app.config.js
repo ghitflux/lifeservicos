@@ -36,12 +36,13 @@ module.exports = {
     },
     plugins: [
       "expo-router",
+      "expo-secure-store",
+      "expo-document-picker",
+      "expo-image-picker",
       [
         "expo-notifications",
         {
-          "icon": "./assets/notification-icon.png",
-          "color": "#1A1A2E",
-          "sounds": ["./assets/notification.wav"]
+          "color": "#1A1A2E"
         }
       ]
     ],
@@ -50,14 +51,16 @@ module.exports = {
       typedRoutes: true
     },
     extra: {
-      // Usa a mesma base do backend web (NEXT_PUBLIC_API_BASE_URL) para sincronizar web ↔ mobile
-      apiBaseUrl: process.env.NEXT_PUBLIC_API_BASE_URL
+      // Usa env em tempo de build/execução; se não houver, o app tenta autodetectar o host do Expo (ver src/services/api.ts)
+      apiBaseUrl: process.env.EXPO_PUBLIC_API_URL
+        || process.env.NEXT_PUBLIC_API_BASE_URL
         || process.env.API_URL
         || process.env.API_URL_WEB
-        || "http://192.168.3.8:8000",
-      apiUrl: process.env.NEXT_PUBLIC_API_BASE_URL
+        || "http://localhost:8000",
+      apiUrl: process.env.EXPO_PUBLIC_API_URL
+        || process.env.NEXT_PUBLIC_API_BASE_URL
         || process.env.API_URL
-        || "http://192.168.3.8:8000",
+        || "http://localhost:8000",
       eas: {
         projectId: process.env.EXPO_PROJECT_ID || "configure-with-eas-cli"
       }

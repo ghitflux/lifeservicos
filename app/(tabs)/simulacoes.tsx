@@ -105,10 +105,10 @@ export default function Simulacoes() {
           style={[styles.newSimulation, { backgroundColor: colors.card, borderColor: colors.accent }]}
           onPress={handleNewSimulation}
         >
-          <Ionicons name="add-circle" size={48} color={colors.accent} />
+          <Ionicons name="document-attach" size={48} color={colors.accent} />
           <Text style={[styles.newSimulationText, { color: colors.accent }]}>Nova Simulação</Text>
           <Text style={[styles.newSimulationSubtext, { color: colors.textSecondary }]}>
-            Simule um empréstimo consignável
+            Envie aqui foto ou anexo do seu contracheque para fazermos sua simulação
           </Text>
         </Pressable>
 

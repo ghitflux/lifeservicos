@@ -4,8 +4,9 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/contexts/ThemeContext';
 import { borderRadius, spacing } from '@/constants/theme';
-import { Header, MobileNav } from '@/components';
+import { Header, MobileNav, AlertDialog } from '@/components';
 import { useAuth } from '@/hooks/useAuth';
+import { useAlert } from '@/hooks/useAlert';
 import { api } from '@/services/api';
 import { useEffect, useState } from 'react';
 
@@ -14,7 +15,8 @@ export default function Perfil() {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const { user, logout } = useAuth();
-  const [stats, setStats] = useState({ simulations: 0, margin: 'R$ 0,00' });
+  const { alert, showDestructive, showSuccess, showError, dismissAlert } = useAlert();
+  const [stats, setStats] = useState({ simulations: 0, activeContracts: 0 });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -24,21 +26,20 @@ export default function Perfil() {
   const loadStats = async () => {
     try {
       setLoading(true);
-      const [simulationsRes, marginsRes] = await Promise.all([
-        api.get('/mobile/simulations').catch(() => ({ data: [] })),
-        api.get('/mobile/margins/current').catch(() => ({ data: null })),
-      ]);
+      const simulationsRes = await api.get('/mobile/simulations').catch(() => ({ data: [] }));
 
-      const simulations = simulationsRes.data?.length || 0;
-      const margin = marginsRes.data?.available_margin || 0;
+      const allSimulations = simulationsRes.data || [];
+      const simulations = allSimulations.length;
 
-      // Format margin as currency
-      const formattedMargin = new Intl.NumberFormat('pt-BR', {
-        style: 'currency',
-        currency: 'BRL',
-      }).format(margin);
+      // Contratos ativos são simulações aprovadas/efetivadas
+      const activeContracts = allSimulations.filter((c: any) =>
+        c.status === 'approved' ||
+        c.status === 'disbursed' ||
+        c.status === 'active' ||
+        c.status === 'finance_approved'
+      ).length;
 
-      setStats({ simulations, margin: formattedMargin });
+      setStats({ simulations, activeContracts });
     } catch (error) {
       console.log('Error loading stats:', error);
     } finally {
@@ -53,6 +54,23 @@ export default function Perfil() {
   const handleLogout = async () => {
     await logout();
     router.replace('/');
+  };
+
+  const handleDeleteAccount = () => {
+    showDestructive(
+      'Excluir Conta',
+      'Tem certeza que deseja excluir sua conta? Esta ação não pode ser desfeita e todos os seus dados serão permanentemente removidos.',
+      async () => {
+        try {
+          await api.delete('/mobile/account');
+          showSuccess('Conta Excluída', 'Sua conta foi excluída com sucesso');
+          await logout();
+          router.replace('/');
+        } catch (error: any) {
+          showError('Erro', error?.response?.data?.detail || 'Não foi possível excluir sua conta');
+        }
+      }
+    );
   };
 
   const getAvatarLetter = () => {
@@ -91,8 +109,8 @@ export default function Perfil() {
                 <ActivityIndicator size="small" color={colors.accent} />
               ) : (
                 <>
-                  <Text style={[styles.statValue, { color: colors.accent }]}>{stats.margin}</Text>
-                  <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Margem</Text>
+                  <Text style={[styles.statValue, { color: colors.accent }]}>{stats.activeContracts}</Text>
+                  <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Contratos Ativos</Text>
                 </>
               )}
             </View>
@@ -188,8 +206,28 @@ export default function Perfil() {
           <Ionicons name="log-out-outline" size={24} color={colors.error} />
           <Text style={[styles.logoutText, { color: colors.error }]}>Sair da Conta</Text>
         </Pressable>
+
+        <Pressable
+          style={[styles.deleteButton, { backgroundColor: colors.error + '10', borderColor: colors.error }]}
+          onPress={handleDeleteAccount}
+        >
+          <Ionicons name="trash-outline" size={24} color={colors.error} />
+          <Text style={[styles.deleteText, { color: colors.error }]}>Excluir Conta</Text>
+        </Pressable>
       </ScrollView>
-      
+
+      {alert && (
+        <AlertDialog
+          visible={!!alert}
+          title={alert.title}
+          message={alert.message}
+          buttons={alert.buttons}
+          icon={alert.icon as any}
+          iconColor={alert.iconColor}
+          onDismiss={dismissAlert}
+        />
+      )}
+
       <MobileNav />
     </SafeAreaView>
   );
@@ -293,11 +331,26 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     borderRadius: borderRadius.md,
     marginHorizontal: spacing.md,
-    marginBottom: spacing.xl,
+    marginBottom: spacing.sm,
     borderWidth: 1,
     gap: spacing.sm,
   },
   logoutText: {
     fontSize: 16,
+  },
+  deleteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.md,
+    borderRadius: borderRadius.md,
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.xl,
+    borderWidth: 1,
+    gap: spacing.sm,
+  },
+  deleteText: {
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
