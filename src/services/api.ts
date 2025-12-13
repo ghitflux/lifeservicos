@@ -3,8 +3,13 @@ import Constants from 'expo-constants';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 
-// Resolve API base URL prioritizing explicit env (API_URL/NEXT_PUBLIC_API_BASE_URL) for physical devices
+// Resolve API base URL priorizando env explícito (EXPO_PUBLIC_API_URL/API_URL) para apontar para o life-system
 const getApiUrl = () => {
+  // Variáveis de ambiente públicas do Expo (definidas em .env ou no comando de build)
+  const envUrl =
+    process.env.EXPO_PUBLIC_API_URL
+    || process.env.API_URL;
+
   const extra =
     Constants.expoConfig?.extra
     || Constants.manifest?.extra
@@ -12,7 +17,8 @@ const getApiUrl = () => {
     || {};
 
   const configuredBase =
-    extra.apiBaseUrl
+    envUrl
+    || extra.apiBaseUrl
     || extra.apiUrl;
 
   if (configuredBase) {
@@ -36,8 +42,8 @@ const getApiUrl = () => {
     return 'http://localhost:8000';
   }
 
-  // Fallback for production: same base used by web
-  return 'http://localhost:8000';
+  // Fallback para produção quando nada foi configurado
+  return 'http://0.0.0.0:8000';
 };
 
 const API_URL = getApiUrl();

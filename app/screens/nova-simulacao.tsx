@@ -104,16 +104,13 @@ export default function NovaSimulacao() {
         },
       });
 
-      // Verificar tipo de cliente (novo ou existente)
-      // Buscar informações do usuário para determinar se tem contratos
-      try {
-        const userResponse = await api.get('/mobile/profile');
-        // Aqui você pode verificar se o usuário tem contratos ativos
-        // Por enquanto, vamos simular a verificação
-        const hasContracts = false; // TODO: Implementar verificação real
-        setClientType(hasContracts ? 'existing_client' : 'new_client');
-      } catch (error) {
-        setClientType('new_client'); // Default para cliente novo
+      // Usa resposta da API para sinalizar prazo correto (novo contrato x recontratação)
+      const serverClientType = (response.data as any)?.client_type;
+      const hasActiveContract = Boolean((response.data as any)?.has_active_contract);
+      if (hasActiveContract || serverClientType === 'existing_client') {
+        setClientType('existing_client');
+      } else {
+        setClientType('new_client');
       }
 
       setUploadSuccess(true);
@@ -153,7 +150,7 @@ export default function NovaSimulacao() {
                   Processo em Análise
                 </Text>
                 <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-                  Seu contracheque está sendo analisado por nossa equipe.
+                  Seu contracheque está sendo analisado por nossa equipe para um novo contrato.
                 </Text>
                 <Text style={[styles.infoHighlight, { color: colors.accent }]}>
                   Retorno em até 24h úteis
@@ -169,7 +166,7 @@ export default function NovaSimulacao() {
                   Análise em Andamento
                 </Text>
                 <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-                  Estamos analisando sua nova simulação.
+                  Estamos analisando sua recontratação.
                 </Text>
                 <Text style={[styles.infoHighlight, { color: colors.accent }]}>
                   Retorno em até 7 dias úteis
@@ -179,6 +176,9 @@ export default function NovaSimulacao() {
                 </Text>
               </>
             )}
+            <Text style={[styles.infoNote, { color: colors.textSecondary }]}>
+              Novos contratos: até 24h úteis. Recontratações: até 7 dias úteis.
+            </Text>
           </View>
 
           <Button
@@ -211,7 +211,7 @@ export default function NovaSimulacao() {
           </Text>
 
           <Text style={[styles.cardDescription, { color: colors.textSecondary }]}>
-            Tire uma foto ou anexe o arquivo do seu contracheque para iniciar sua simulação
+            Envie apenas o contracheque para iniciar sua simulação. Outros documentos serão solicitados somente após a aprovação da análise.
           </Text>
 
           {document ? (
@@ -277,7 +277,7 @@ export default function NovaSimulacao() {
         <View style={[styles.infoBox, { backgroundColor: colors.card }]}>
           <Ionicons name="information-circle" size={24} color={colors.accent} />
           <Text style={[styles.infoBoxText, { color: colors.textSecondary }]}>
-            Formatos aceitos: JPG, PNG, PDF. Certifique-se de que o documento está legível.
+            Formatos aceitos: JPG, PNG, PDF. Certifique-se de que o contracheque está legível. Outros documentos serão pedidos depois da análise, se necessário.
           </Text>
         </View>
       </ScrollView>
@@ -435,5 +435,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     textAlign: 'center',
     lineHeight: 18,
+  },
+  infoNote: {
+    fontSize: 12,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginTop: spacing.md,
   },
 });

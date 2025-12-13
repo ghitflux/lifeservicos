@@ -1,11 +1,16 @@
+const apiBaseUrl =
+  process.env.EXPO_PUBLIC_API_URL
+  || process.env.API_URL
+  || "http://0.0.0.0:8000"; // API do life-system (ajuste EXPO_PUBLIC_API_URL para o IP acessivel)
+
 module.exports = {
   expo: {
     name: "App Life Digital",
     slug: "applifedigital",
     version: "1.0.0",
     orientation: "portrait",
-    icon: "./assets/icon.png",
     userInterfaceStyle: "automatic",
+    icon: "./assets/icon.png",
     splash: {
       image: "./assets/splash.png",
       resizeMode: "contain",
@@ -28,12 +33,9 @@ module.exports = {
         "RECEIVE_BOOT_COMPLETED",
         "VIBRATE",
         "USE_FINGERPRINT"
-      ],
-      googleServicesFile: process.env.GOOGLE_SERVICES_JSON
+      ]
     },
-    web: {
-      favicon: "./assets/favicon.png"
-    },
+    web: {},
     plugins: [
       "expo-router",
       "expo-secure-store",
@@ -51,18 +53,11 @@ module.exports = {
       typedRoutes: true
     },
     extra: {
-      // Usa env em tempo de build/execução; se não houver, o app tenta autodetectar o host do Expo (ver src/services/api.ts)
-      apiBaseUrl: process.env.EXPO_PUBLIC_API_URL
-        || process.env.NEXT_PUBLIC_API_BASE_URL
-        || process.env.API_URL
-        || process.env.API_URL_WEB
-        || "http://localhost:8000",
-      apiUrl: process.env.EXPO_PUBLIC_API_URL
-        || process.env.NEXT_PUBLIC_API_BASE_URL
-        || process.env.API_URL
-        || "http://localhost:8000",
+      // Base da API do life-system (defina EXPO_PUBLIC_API_URL / API_URL no build ou expo start)
+      apiBaseUrl,
+      apiUrl: apiBaseUrl,
       eas: {
-        projectId: process.env.EXPO_PROJECT_ID || "configure-with-eas-cli"
+        projectId: "fab466c5-5cf6-4763-932d-673443916eb2"
       }
     }
   }

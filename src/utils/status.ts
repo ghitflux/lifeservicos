@@ -1,5 +1,8 @@
 export type MobileSimulationStatus =
   | 'pending'
+  | 'pending_analysis'
+  | 'pending_docs'
+  | 'approved_for_calculation'
   | 'simulation_requested'
   | 'approved'
   | 'approved_by_client'
@@ -19,6 +22,12 @@ export function mapSimulationStatus(status?: string): { label: string; tone: Sta
   const normalized = (status || '').toLowerCase();
 
   switch (normalized) {
+    case 'pending_analysis':
+      return { label: 'Pendente de Análise', tone: 'warning' };
+    case 'pending_docs':
+      return { label: 'Documentos Pendentes', tone: 'warning' };
+    case 'approved_for_calculation':
+      return { label: 'Simulação Pendente', tone: 'warning' };
     case 'pending':
     case 'simulation_requested':
       return { label: 'Em análise', tone: 'warning' };

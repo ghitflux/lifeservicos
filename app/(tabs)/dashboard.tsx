@@ -128,10 +128,12 @@ export default function Dashboard() {
             </View>
           </View>
           <View style={styles.prominentCardBody}>
-            <Text style={[styles.prominentTitle, { color: '#ffffff' }]}>Consulte sua Margem</Text>
-            <Text style={[styles.prominentSubtitle, { color: 'rgba(255, 255, 255, 0.95)' }]}>Envie uma foto ou documento para análise</Text>
+            <Text style={[styles.prominentTitle, { color: '#ffffff' }]}>Toque aqui para solicitar simulação</Text>
+            <Text style={[styles.prominentSubtitle, { color: 'rgba(255, 255, 255, 0.95)' }]}>
+              Envie foto ou documento do seu contracheque para fazermos sua simulação
+            </Text>
             <View style={[styles.prominentButtonContainer, { backgroundColor: 'rgba(255, 255, 255, 0.2)', paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: borderRadius.md, marginTop: spacing.md }]}>
-              <Text style={[styles.prominentButtonText, { color: '#ffffff' }]}>Iniciar Consulta</Text>
+              <Text style={[styles.prominentButtonText, { color: '#ffffff' }]}>Enviar contracheque</Text>
               <Ionicons name="arrow-forward" size={18} color="#ffffff" />
             </View>
           </View>
