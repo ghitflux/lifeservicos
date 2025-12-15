@@ -1,6 +1,6 @@
 import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -27,6 +27,10 @@ interface Simulation {
   coeficiente?: string;
   seguro?: number;
   percentual_consultoria?: number;
+  analysis_status?: string;
+  pending_documents?: { type: string; description?: string }[];
+  analyst_notes?: string;
+  documents?: { id: string; document_type?: string; document_filename?: string; created_at?: string }[];
 }
 
 export default function DetalhesSimulacao() {
@@ -38,6 +42,18 @@ export default function DetalhesSimulacao() {
   const { user } = useAuth();
   const [simulation, setSimulation] = useState<Simulation | null>(null);
   const [loading, setLoading] = useState(true);
+  const pendingDocs = useMemo(
+    () => (Array.isArray(simulation?.pending_documents) ? simulation?.pending_documents : []),
+    [simulation?.pending_documents]
+  );
+  const liberadoTotal = useMemo(() => {
+    if (!simulation) return 0;
+    const banks = Array.isArray(simulation.banks_json) ? simulation.banks_json : [];
+    const totalFromBanks = banks.reduce((sum, bank) => sum + Number(bank?.valorLiberado || 0), 0);
+    if (totalFromBanks > 0) return totalFromBanks;
+    if (simulation.total_amount && simulation.total_amount > 0) return simulation.total_amount;
+    return simulation.requested_amount || 0;
+  }, [simulation]);
 
   useEffect(() => {
     fetchSimulation();
@@ -190,6 +206,16 @@ export default function DetalhesSimulacao() {
   const showFinanceActions =
     canManageStatus &&
     ['approved_by_client', 'cliente_aprovada', 'simulacao_aprovada', 'financeiro_pendente'].includes(normalizedStatus);
+  const analysisStatus = (simulation as any)?.analysis_status?.toLowerCase?.();
+  const hasPendingDocs =
+    normalizedStatus === 'pending_docs' || analysisStatus === 'pending_docs' || pendingDocs.length > 0;
+  const showSimulationResult = ['approved', 'approved_by_client', 'cliente_aprovada', 'simulacao_aprovada', 'financeiro_pendente', 'contrato_efetivado'].includes(
+    normalizedStatus
+  );
+  const simulationTypeLabel =
+    simulation.simulation_type === 'document_upload'
+      ? 'Solicitação de Simulação'
+      : (simulation.simulation_type || '').replace(/_/g, ' ');
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
@@ -223,13 +249,70 @@ export default function DetalhesSimulacao() {
           </View>
         </View>
 
-        <View style={[styles.preApprovedCard, { borderColor: colors.accent + '80', backgroundColor: colors.accent + '15' }]}>
-          <Text style={[styles.preApprovedLabel, { color: colors.accent + 'CC' }]}>
-            Valor Solicitado
-          </Text>
-          <Text style={[styles.preApprovedValue, { color: colors.accent }]}>
-            {formatCurrency(simulation.requested_amount)}
-          </Text>
+        {showSimulationResult && (
+          <View style={[styles.highlightCard, { backgroundColor: colors.card, borderColor: colors.accent + '60' }]}>
+            <View style={styles.highlightHeader}>
+              <View style={[styles.highlightIcon, { backgroundColor: colors.accent + '20' }]}>
+                <Ionicons name="cash-outline" size={22} color={colors.accent} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.highlightLabel, { color: colors.text }]}>Valor liberado para você</Text>
+                <Text style={[styles.highlightValue, { color: colors.accent }]}>{formatCurrency(liberadoTotal)}</Text>
+                <Text style={[styles.highlightSub, { color: colors.textSecondary }]}>
+                  Baseado na simulação enviada
+                </Text>
+              </View>
+            </View>
+          </View>
+        )}
+
+        <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border + '80' }]}>
+          <View style={styles.sectionHeader}>
+            <Ionicons name="alert-circle" size={20} color={colors.accent} />
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Pendências de documentos</Text>
+          </View>
+          {hasPendingDocs ? (
+            <View style={{ gap: spacing.xs }}>
+              {pendingDocs.length > 0 ? (
+                pendingDocs.map((doc, index) => (
+                  <View key={`${doc.type}-${index}`} style={styles.pendingItem}>
+                    <Ionicons name="document-text" size={18} color={colors.textSecondary} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.pendingLabel, { color: colors.text }]}>
+                        {doc.type || 'Documento solicitado'}
+                      </Text>
+                      {doc.description ? (
+                        <Text style={[styles.pendingDescription, { color: colors.textSecondary }]}>
+                          {doc.description}
+                        </Text>
+                      ) : null}
+                    </View>
+                  </View>
+                ))
+              ) : (
+                <Text style={[styles.pendingDescription, { color: colors.textSecondary }]}>
+                  Temos uma pendência de documento. Reenvie o contracheque mais recente para continuar.
+                </Text>
+              )}
+              {simulation.analyst_notes ? (
+                <Text style={[styles.pendingNote, { color: colors.textSecondary }]}>
+                  Observação do analista: {simulation.analyst_notes}
+                </Text>
+              ) : null}
+            </View>
+          ) : (
+            <Text style={[styles.pendingDescription, { color: colors.textSecondary }]}>
+              Nenhuma pendência de documento no momento.
+            </Text>
+          )}
+
+          <Pressable
+            style={[styles.pendingButton, { borderColor: colors.accent + '70', backgroundColor: colors.accent + '12' }]}
+            onPress={() => router.push('/screens/enviar-documento')}
+          >
+            <Ionicons name="cloud-upload" size={18} color={colors.accent} />
+            <Text style={[styles.pendingButtonText, { color: colors.accent }]}>Enviar documento agora</Text>
+          </Pressable>
         </View>
 
         {/* Card informativo para contrato efetivado */}
@@ -276,48 +359,57 @@ export default function DetalhesSimulacao() {
           </View>
         )}
 
-        <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border + '80' }]}>
-          <View style={styles.sectionHeader}>
-            <Ionicons name="calculator" size={20} color={colors.accent} />
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Detalhes Financeiros</Text>
+        {showSimulationResult && (
+          <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border + '80' }]}>
+            <View style={styles.sectionHeader}>
+              <Ionicons name="calculator" size={20} color={colors.accent} />
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>Detalhes Financeiros</Text>
+            </View>
+            <View style={styles.totalsList}>
+              <View style={styles.totalRow}>
+                <Text style={[styles.totalLabel, { color: colors.textSecondary }]}>Valor Liberado</Text>
+                <Text style={[styles.totalValue, { color: colors.accent }]}>
+                  {formatCurrency(liberadoTotal)}
+                </Text>
+              </View>
+              <View style={[styles.divider, { backgroundColor: colors.border + '50' }]} />
+              <View style={styles.totalRow}>
+                <Text style={[styles.totalLabel, { color: colors.textSecondary }]}>Valor Solicitado</Text>
+                <Text style={[styles.totalValue, { color: colors.text }]}>
+                  {formatCurrency(simulation.requested_amount)}
+                </Text>
+              </View>
+              <View style={[styles.divider, { backgroundColor: colors.border + '50' }]} />
+              <View style={styles.totalRow}>
+                <Text style={[styles.totalLabel, { color: colors.textSecondary }]}>Valor da Parcela</Text>
+                <Text style={[styles.totalValue, { color: colors.text }]}>
+                  {formatCurrency(simulation.installment_value)}
+                </Text>
+              </View>
+              <View style={[styles.divider, { backgroundColor: colors.border + '50' }]} />
+              <View style={styles.totalRow}>
+                <Text style={[styles.totalLabel, { color: colors.textSecondary }]}>Número de Parcelas</Text>
+                <Text style={[styles.totalValue, { color: colors.text }]}>
+                  {simulation.installments}x
+                </Text>
+              </View>
+              <View style={[styles.divider, { backgroundColor: colors.border + '50' }]} />
+              <View style={styles.totalRow}>
+                <Text style={[styles.totalLabel, { color: colors.textSecondary }]}>Valor Total a Pagar</Text>
+                <Text style={[styles.totalValue, { color: colors.text }]}>
+                  {formatCurrency(simulation.total_amount)}
+                </Text>
+              </View>
+              <View style={[styles.divider, { backgroundColor: colors.border + '50' }]} />
+              <View style={styles.totalRow}>
+                <Text style={[styles.totalLabel, { color: colors.textSecondary }]}>Taxa de Juros (mensal)</Text>
+                <Text style={[styles.totalValue, { color: colors.text }]}>
+                  {simulation.interest_rate.toFixed(2)}%
+                </Text>
+              </View>
+            </View>
           </View>
-          <View style={styles.totalsList}>
-            <View style={styles.totalRow}>
-              <Text style={[styles.totalLabel, { color: colors.textSecondary }]}>Valor Solicitado</Text>
-              <Text style={[styles.totalValue, { color: colors.text }]}>
-                {formatCurrency(simulation.requested_amount)}
-              </Text>
-            </View>
-            <View style={[styles.divider, { backgroundColor: colors.border + '50' }]} />
-            <View style={styles.totalRow}>
-              <Text style={[styles.totalLabel, { color: colors.textSecondary }]}>Número de Parcelas</Text>
-              <Text style={[styles.totalValue, { color: colors.text }]}>
-                {simulation.installments}x
-              </Text>
-            </View>
-            <View style={[styles.divider, { backgroundColor: colors.border + '50' }]} />
-            <View style={styles.totalRow}>
-              <Text style={[styles.totalLabel, { color: colors.textSecondary }]}>Taxa de Juros (mensal)</Text>
-              <Text style={[styles.totalValue, { color: colors.text }]}>
-                {simulation.interest_rate.toFixed(2)}%
-              </Text>
-            </View>
-            <View style={[styles.divider, { backgroundColor: colors.border + '50' }]} />
-            <View style={styles.totalRow}>
-              <Text style={[styles.totalLabel, { color: colors.textSecondary }]}>Valor da Parcela</Text>
-              <Text style={[styles.totalValue, { color: colors.text }]}>
-                {formatCurrency(simulation.installment_value)}
-              </Text>
-            </View>
-            <View style={[styles.divider, { backgroundColor: colors.border + '50' }]} />
-            <View style={styles.totalRow}>
-              <Text style={[styles.totalLabel, { color: colors.textSecondary }]}>Valor Total a Pagar</Text>
-              <Text style={[styles.totalValue, { color: colors.accent, fontWeight: 'bold' }]}>
-                {formatCurrency(simulation.total_amount)}
-              </Text>
-            </View>
-          </View>
-        </View>
+        )}
 
         {Array.isArray(simulation.banks_json) && simulation.banks_json.length > 0 && (
           <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border + '80' }]}>
@@ -385,7 +477,7 @@ export default function DetalhesSimulacao() {
           </View>
           <View style={styles.infoRow}>
             <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>Tipo:</Text>
-            <Text style={[styles.infoValue, { color: colors.text }]}>{simulation.simulation_type}</Text>
+            <Text style={[styles.infoValue, { color: colors.text }]}>{simulationTypeLabel}</Text>
           </View>
           <View style={styles.infoRow}>
             <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>Data:</Text>
@@ -397,6 +489,29 @@ export default function DetalhesSimulacao() {
               })}
             </Text>
           </View>
+          {Array.isArray(simulation.documents) && simulation.documents.length > 0 && (
+            <>
+              <View style={[styles.divider, { backgroundColor: colors.border + '50' }]} />
+              <Text style={[styles.sectionSubtitle, { color: colors.text }]}>Documentos enviados</Text>
+              {simulation.documents.map((doc, idx) => (
+                <View key={`${doc.id || idx}`} style={styles.infoRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>
+                      {doc.document_type || 'Documento'}
+                    </Text>
+                    <Text style={[styles.infoValue, { color: colors.text }]}>
+                      {doc.document_filename || 'Arquivo'}
+                    </Text>
+                  </View>
+                  {doc.created_at && (
+                    <Text style={[styles.infoValue, { color: colors.textSecondary }]}>
+                      {new Date(doc.created_at).toLocaleDateString('pt-BR')}
+                    </Text>
+                  )}
+                </View>
+              ))}
+            </>
+          )}
         </View>
       </ScrollView>
 
@@ -452,21 +567,35 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
-  preApprovedCard: {
+  highlightCard: {
     borderRadius: borderRadius.xl,
     padding: spacing.lg,
-    borderWidth: 2,
-    alignItems: 'center',
+    borderWidth: 1,
     marginBottom: spacing.md,
   },
-  preApprovedLabel: {
-    fontSize: 14,
-    fontWeight: '500',
-    marginBottom: spacing.sm,
+  highlightHeader: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    alignItems: 'center',
   },
-  preApprovedValue: {
-    fontSize: 36,
-    fontWeight: 'bold',
+  highlightIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  highlightLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  highlightValue: {
+    fontSize: 32,
+    fontWeight: '800',
+  },
+  highlightSub: {
+    fontSize: 12,
+    marginTop: 4,
   },
   infoCard: {
     marginBottom: spacing.md,
@@ -526,6 +655,39 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '500',
   },
+  pendingItem: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    alignItems: 'flex-start',
+    marginBottom: spacing.xs,
+  },
+  pendingLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  pendingDescription: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  pendingNote: {
+    fontSize: 12,
+    marginTop: spacing.xs,
+    lineHeight: 18,
+  },
+  pendingButton: {
+    marginTop: spacing.md,
+    padding: spacing.md,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+  },
+  pendingButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
   sectionCard: {
     borderRadius: borderRadius.xl,
     padding: spacing.md,
@@ -541,6 +703,11 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 16,
     fontWeight: '600',
+  },
+  sectionSubtitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: spacing.xs,
   },
   banksRow: {
     flexDirection: 'row',

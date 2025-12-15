@@ -105,8 +105,8 @@ export function setupNotificationListeners(
     notificationListener,
     responseListener,
     remove: () => {
-      Notifications.removeNotificationSubscription(notificationListener);
-      Notifications.removeNotificationSubscription(responseListener);
+      notificationListener?.remove?.();
+      responseListener?.remove?.();
     },
   };
 }

@@ -33,7 +33,7 @@ export default function Notificacoes() {
 
   const fetchNotifications = async () => {
     try {
-      const response = await api.get('/notifications');
+      const response = await api.get('/mobile/notifications');
       const data = response.data?.items || response.data || [];
       setNotifications(Array.isArray(data) ? data : []);
     } catch (error: any) {
@@ -58,7 +58,7 @@ export default function Notificacoes() {
 
   const markAsRead = async (id: string) => {
     try {
-      await api.put(`/notifications/${id}/read`).catch(() => null);
+      await api.put(`/mobile/notifications/${id}/read`).catch(() => null);
       setNotifications(prev =>
         prev.map(notif =>
           notif.id === id ? { ...notif, is_read: true } : notif
@@ -79,7 +79,7 @@ export default function Notificacoes() {
     try {
       // Mark all unread notifications as read
       const unreadIds = notifications.filter(n => !n.is_read).map(n => n.id);
-      await Promise.all(unreadIds.map(id => api.put(`/notifications/${id}/read`).catch(() => null)));
+      await Promise.all(unreadIds.map(id => api.put(`/mobile/notifications/${id}/read`).catch(() => null)));
 
       setNotifications(prev =>
         prev.map(notif => ({ ...notif, is_read: true }))
@@ -94,22 +94,13 @@ export default function Notificacoes() {
   };
 
   const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
-
-    if (diffMins < 60) {
-      return `Há ${diffMins} minuto${diffMins !== 1 ? 's' : ''}`;
-    } else if (diffHours < 24) {
-      return `Há ${diffHours} hora${diffHours !== 1 ? 's' : ''}`;
-    } else if (diffDays < 7) {
-      return `Há ${diffDays} dia${diffDays !== 1 ? 's' : ''}`;
-    } else {
-      return date.toLocaleDateString('pt-BR');
-    }
+    const parsed = new Date(dateString);
+    // Ajusta para fuso 3h atrás
+    const adjusted = new Date(parsed.getTime() - 3 * 60 * 60 * 1000);
+    return adjusted.toLocaleString('pt-BR', {
+      dateStyle: 'short',
+      timeStyle: 'short',
+    });
   };
 
   const getIconName = (type: string) => {
@@ -258,6 +249,18 @@ export default function Notificacoes() {
                 { backgroundColor: colors.card },
                 !notification.is_read && { borderLeftColor: colors.accent, borderLeftWidth: 3 }
               ]}
+              onPress={() => {
+                markAsRead(notification.id);
+                const lowerTitle = (notification.title || '').toLowerCase();
+                const lowerMsg = (notification.message || '').toLowerCase();
+                if (lowerMsg.includes('simula') || lowerTitle.includes('simula')) {
+                  router.push('/(tabs)/simulacoes');
+                } else if (lowerMsg.includes('documento') || lowerTitle.includes('documento')) {
+                  router.push('/screens/enviar-documento');
+                } else {
+                  router.push('/(tabs)/notificacoes');
+                }
+              }}
             >
               <View style={[styles.iconContainer, { backgroundColor: getIconBackground(notification.type) }]}>
                 <Ionicons

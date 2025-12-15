@@ -46,10 +46,17 @@ export default function Historico() {
   const fetchHistory = async () => {
     try {
       const simulationsRes = await api.get('/mobile/simulations').catch(() => ({ data: [] }));
-      const simulationsWithType: Simulation[] = (simulationsRes.data || []).map((sim: any) => ({
-        ...sim,
-        type: 'simulation' as const,
-      }));
+      const simulationsWithType: Simulation[] = (simulationsRes.data || []).map((sim: any) => {
+        const normalizedType =
+          sim.simulation_type === 'document_upload'
+            ? 'Solicitação de Simulação'
+            : (sim.simulation_type || '').replace(/_/g, ' ') || 'Simulação';
+        return {
+          ...sim,
+          simulation_type: normalizedType,
+          type: 'simulation' as const,
+        };
+      });
 
       const combined = simulationsWithType.sort((a, b) => {
         const dateA = new Date(a.created_at).getTime();

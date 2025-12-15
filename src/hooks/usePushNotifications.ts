@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import * as Notifications from 'expo-notifications';
 import { useRouter } from 'expo-router';
+import { Platform } from 'react-native';
 import {
   registerForPushNotificationsAsync,
   setupNotificationListeners,
@@ -45,6 +46,8 @@ export function usePushNotifications() {
           });
         } else if (data?.type === 'simulation') {
           router.push('/(tabs)/simulacoes');
+        } else {
+          router.push('/(tabs)/notificacoes');
         }
       }
     );
@@ -59,9 +62,11 @@ export function usePushNotifications() {
 
   const savePushToken = async (token: string) => {
     try {
-      // TODO: Implementar endpoint no backend para salvar o push token
-      // await api.post('/mobile/push-token', { token });
-      console.log('Push token que seria salvo:', token);
+      await api.post('/mobile/push-token', {
+        token,
+        platform: Platform.OS,
+      });
+      console.log('Push token salvo:', token);
     } catch (error) {
       console.error('Erro ao salvar push token:', error);
     }

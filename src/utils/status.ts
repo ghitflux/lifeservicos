@@ -12,6 +12,7 @@ export type MobileSimulationStatus =
   | 'financeiro_pendente'
   | 'contrato_efetivado'
   | 'financeiro_cancelado'
+  | 'retorno_pendencia'
   | 'rejected_by_client'
   | 'rejected'
   | string;
@@ -26,8 +27,10 @@ export function mapSimulationStatus(status?: string): { label: string; tone: Sta
       return { label: 'Pendente de Análise', tone: 'warning' };
     case 'pending_docs':
       return { label: 'Documentos Pendentes', tone: 'warning' };
+    case 'retorno_pendencia':
+      return { label: 'Retorno de Pendência', tone: 'warning' };
     case 'approved_for_calculation':
-      return { label: 'Simulação Pendente', tone: 'warning' };
+      return { label: 'Em simulação', tone: 'warning' };
     case 'pending':
     case 'simulation_requested':
       return { label: 'Em análise', tone: 'warning' };

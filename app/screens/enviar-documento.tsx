@@ -2,7 +2,7 @@ import { View, Text, StyleSheet, ScrollView, Pressable, Image, ActivityIndicator
 import { useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Button, Header, MobileNav, Input, AlertDialog } from '@/components';
+import { Header, MobileNav, AlertDialog } from '@/components';
 import { useDocumentPicker } from '@/hooks/useDocumentPicker';
 import { useTheme } from '@/contexts/ThemeContext';
 import { borderRadius, spacing } from '@/constants/theme';
@@ -15,7 +15,7 @@ export default function EnviarDocumento() {
   const { colors } = useTheme();
   const { alert, showError, showSuccess, dismissAlert } = useAlert();
   const [selectedFile, setSelectedFile] = useState<any>(null);
-  const [documentType, setDocumentType] = useState('');
+  const [documentType, setDocumentType] = useState('Contracheque');
   const [loading, setLoading] = useState(false);
   const { pickDocument } = useDocumentPicker();
 
@@ -51,11 +51,6 @@ export default function EnviarDocumento() {
       return;
     }
 
-    if (!documentType) {
-      showError('Erro', 'Selecione o tipo de documento');
-      return;
-    }
-
     if (!selectedFile.uri && !selectedFile.fileCopyUri) {
       showError('Erro', 'Não foi possível ler o arquivo selecionado');
       return;
@@ -67,37 +62,51 @@ export default function EnviarDocumento() {
     const filename = selectedFile.name || selectedFile.fileName || `document_${Date.now()}.jpg`;
 
     formData.append('document', {
-      // expo-image-picker usa uri, DocumentPicker usa fileCopyUri
       uri: selectedFile.uri || selectedFile.fileCopyUri,
       name: filename,
       type: selectedFile.mimeType || selectedFile.type || 'application/octet-stream',
     } as any);
 
     formData.append('simulation_type', 'document_upload');
-    formData.append('document_type', documentType);
+    if (documentType) {
+      formData.append('document_type', documentType);
+    }
 
-    const uploadOnce = async () => api.post('/mobile/simulations/upload', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-      timeout: 20000,
-    });
+    const uploadOnce = async () =>
+      api.post('/mobile/simulations/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 20000,
+      });
+
+    const handleSuccess = (response: any) => {
+      const data = response?.data || {};
+      let message = data?.message || 'Documento enviado com sucesso!';
+      const clientType = data?.client_type;
+      const hasActiveContract = Boolean(data?.has_active_contract);
+
+      if (String(documentType || '').toLowerCase() === 'contracheque') {
+        if (clientType === 'new_client' && !hasActiveContract) {
+          message = `${message}\n\nRetorno em até 24h úteis.`;
+        } else if (clientType === 'existing_client' || hasActiveContract) {
+          message = `${message}\n\nRetorno em até 7 dias úteis.`;
+        }
+      }
+
+      showSuccess('Sucesso', message);
+      setSelectedFile(null);
+      setDocumentType('Contracheque');
+    };
 
     try {
       try {
         const response = await uploadOnce();
-        const message = response.data?.message || 'Documento enviado com sucesso!';
-        showSuccess('Sucesso', message);
-        setSelectedFile(null);
-        setDocumentType('');
+        handleSuccess(response);
       } catch (error: any) {
-        // Re-tenta automaticamente uma vez em caso de erro de rede inicial (cenário observado)
         const isNetworkError = error?.code === 'ERR_NETWORK' || error?.message === 'Network Error';
         if (isNetworkError) {
           await new Promise((resolve) => setTimeout(resolve, 1000));
           const response = await uploadOnce();
-          const message = response.data?.message || 'Documento enviado com sucesso!';
-          showSuccess('Sucesso', message);
-          setSelectedFile(null);
-          setDocumentType('');
+          handleSuccess(response);
           return;
         }
         throw error;
@@ -115,14 +124,83 @@ export default function EnviarDocumento() {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <Header title="Enviar Documento" showBackButton />
 
-      <ScrollView 
-        style={styles.content} 
+      <ScrollView
+        style={styles.content}
         contentContainerStyle={{ paddingBottom: 80 + insets.bottom }}
+        showsVerticalScrollIndicator={false}
       >
-        <View style={[styles.infoCard, { backgroundColor: colors.cardSecondary }]}>
-          <Ionicons name="information-circle" size={24} color={colors.accent} />
-          <Text style={[styles.infoText, { color: colors.text }]}>
-            Envie fotos ou PDFs dos seus documentos
+        <View style={[styles.hero, { backgroundColor: colors.cardSecondary, borderColor: colors.accent + '60' }]}>
+          <View style={styles.heroHeader}>
+            <View style={[styles.heroIcon, { backgroundColor: colors.accent + '20' }]}> 
+              <Ionicons name="document-attach" size={26} color={colors.accent} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.heroTitle, { color: colors.text }]}>Envie seu contracheque</Text>
+              <Text style={[styles.heroSubtitle, { color: colors.textSecondary }]}>
+                Envie foto ou anexo do seu contracheque para prosseguirmos com sua simulação.
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.slaChips}>
+            <View style={[styles.slaChip, { borderColor: colors.accent + '50' }]}>
+              <Ionicons name="time-outline" size={16} color={colors.accent} />
+              <View>
+                <Text style={[styles.slaLabel, { color: colors.text }]}>Novo contrato</Text>
+                <Text style={[styles.slaValue, { color: colors.accent }]}>Retorno em até 24h úteis</Text>
+              </View>
+            </View>
+            <View style={[styles.slaChip, { borderColor: colors.accent + '50' }]}>
+              <Ionicons name="refresh-outline" size={16} color={colors.accent} />
+              <View>
+                <Text style={[styles.slaLabel, { color: colors.text }]}>Recontratação</Text>
+                <Text style={[styles.slaValue, { color: colors.accent }]}>Retorno em até 7 dias úteis</Text>
+              </View>
+            </View>
+          </View>
+        </View>
+
+        <View style={[styles.stepsCard, { backgroundColor: colors.card }]}>
+          <Text style={[styles.stepsTitle, { color: colors.text }]}>Como enviar</Text>
+          <View style={styles.stepItem}>
+            <Ionicons name="checkmark-circle" size={18} color={colors.success} />
+            <Text style={[styles.stepText, { color: colors.textSecondary }]}>Escolha foto ou PDF do contracheque.</Text>
+          </View>
+          <View style={styles.stepItem}>
+            <Ionicons name="checkmark-circle" size={18} color={colors.success} />
+            <Text style={[styles.stepText, { color: colors.textSecondary }]}>Garanta que os dados estejam legíveis.</Text>
+          </View>
+          <View style={styles.stepItem}>
+            <Ionicons name="checkmark-circle" size={18} color={colors.success} />
+            <Text style={[styles.stepText, { color: colors.textSecondary }]}>Selecione o tipo e envie para agilizar.</Text>
+          </View>
+        </View>
+
+        <View style={[styles.typeSelector, { backgroundColor: colors.card, borderColor: colors.border + '60' }]}>
+          <Text style={[styles.typeLabel, { color: colors.text }]}>Tipo de Documento (opcional)</Text>
+          <View style={styles.typeButtons}>
+            {['Contracheque', 'RG', 'CPF', 'CNH', 'Comprovante'].map((type) => (
+              <Pressable
+                key={type}
+                style={[
+                  styles.typeButton,
+                  { backgroundColor: documentType === type ? colors.accent : colors.background, borderColor: colors.border },
+                ]}
+                onPress={() => setDocumentType(type)}
+              >
+                <Text
+                  style={[
+                    styles.typeButtonText,
+                    { color: documentType === type ? colors.text : colors.textSecondary },
+                  ]}
+                >
+                  {type}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+          <Text style={[styles.helperText, { color: colors.textSecondary }]}>
+            Priorize o contracheque mais recente para acelerar sua análise.
           </Text>
         </View>
 
@@ -139,16 +217,16 @@ export default function EnviarDocumento() {
         </View>
 
         {selectedFile && (
-          <View style={[styles.previewCard, { backgroundColor: colors.card }]}>
-            <Text style={[styles.previewTitle, { color: colors.text }]}>Foto Capturada</Text>
+          <View style={[styles.previewCard, { backgroundColor: colors.card }]}> 
+            <Text style={[styles.previewTitle, { color: colors.text }]}>Documento selecionado</Text>
             {selectedFile.uri && selectedFile.mimeType?.startsWith('image/') && (
               <Image source={{ uri: selectedFile.uri }} style={styles.previewImage} />
             )}
             <View style={styles.fileInfo}>
               <Ionicons name="document-text" size={24} color={colors.textSecondary} />
               <View style={styles.fileDetails}>
-                <Text style={[styles.fileName, { color: colors.text }]}>{selectedFile.name || 'Imagem'}</Text>
-                <Text style={[styles.fileSize, { color: colors.textSecondary }]}>
+                <Text style={[styles.fileName, { color: colors.text }]}>{selectedFile.name || 'Arquivo'}</Text>
+                <Text style={[styles.fileSize, { color: colors.textSecondary }]}> 
                   {selectedFile.size ? `${(selectedFile.size / 1024).toFixed(2)} KB` : ''}
                 </Text>
               </View>
@@ -160,33 +238,8 @@ export default function EnviarDocumento() {
                 onPress={() => setSelectedFile(null)}
               >
                 <Ionicons name="refresh-outline" size={20} color={colors.accent} />
-                <Text style={[styles.retakeButtonText, { color: colors.accent }]}>Tirar Outra Foto</Text>
+                <Text style={[styles.retakeButtonText, { color: colors.accent }]}>Trocar arquivo</Text>
               </Pressable>
-            </View>
-
-            <View style={styles.typeSelector}>
-              <Text style={[styles.typeLabel, { color: colors.text }]}>Tipo de Documento *</Text>
-              <View style={styles.typeButtons}>
-                {['RG', 'CPF', 'CNH', 'Comprovante', 'Contracheque'].map((type) => (
-                  <Pressable
-                    key={type}
-                    style={[
-                      styles.typeButton,
-                      { backgroundColor: documentType === type ? colors.accent : colors.background },
-                    ]}
-                    onPress={() => setDocumentType(type)}
-                  >
-                    <Text
-                      style={[
-                        styles.typeButtonText,
-                        { color: documentType === type ? colors.text : colors.textSecondary },
-                      ]}
-                    >
-                      {type}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
             </View>
           </View>
         )}
@@ -198,11 +251,11 @@ export default function EnviarDocumento() {
                 styles.sendPhotoButton,
                 {
                   backgroundColor: colors.accent,
-                  opacity: documentType ? 1 : 0.6
-                }
+                  opacity: loading ? 0.7 : 1,
+                },
               ]}
               onPress={handleUpload}
-              disabled={!documentType || loading}
+              disabled={loading}
             >
               {loading ? (
                 <ActivityIndicator color={colors.text} />
@@ -210,19 +263,23 @@ export default function EnviarDocumento() {
                 <>
                   <Ionicons name="cloud-upload" size={24} color={colors.text} />
                   <Text style={[styles.sendPhotoButtonText, { color: colors.text }]}>
-                    Enviar Foto
+                    Enviar documento
                   </Text>
                 </>
               )}
             </Pressable>
             <Text style={[styles.helperText, { color: colors.textSecondary }]}>
-              Selecione o tipo de documento para continuar
+              Confirmaremos o recebimento por aqui.
             </Text>
           </View>
         )}
 
-        <View style={[styles.documentsCard, { backgroundColor: colors.card }]}>
+        <View style={[styles.documentsCard, { backgroundColor: colors.card }]}> 
           <Text style={[styles.documentsTitle, { color: colors.text }]}>Documentos Aceitos</Text>
+          <View style={styles.documentItem}>
+            <Ionicons name="checkmark-circle" size={20} color={colors.success} />
+            <Text style={[styles.documentText, { color: colors.textSecondary }]}>Contracheque (preferencial)</Text>
+          </View>
           <View style={styles.documentItem}>
             <Ionicons name="checkmark-circle" size={20} color={colors.success} />
             <Text style={[styles.documentText, { color: colors.textSecondary }]}>RG ou CNH</Text>
@@ -234,10 +291,6 @@ export default function EnviarDocumento() {
           <View style={styles.documentItem}>
             <Ionicons name="checkmark-circle" size={20} color={colors.success} />
             <Text style={[styles.documentText, { color: colors.textSecondary }]}>Comprovante de Residência</Text>
-          </View>
-          <View style={styles.documentItem}>
-            <Ionicons name="checkmark-circle" size={20} color={colors.success} />
-            <Text style={[styles.documentText, { color: colors.textSecondary }]}>Contracheque</Text>
           </View>
         </View>
       </ScrollView>
@@ -266,16 +319,71 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
   },
-  infoCard: {
+  hero: {
     margin: spacing.md,
+    padding: spacing.lg,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    gap: spacing.md,
+  },
+  heroHeader: {
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
+  heroIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  heroSubtitle: {
+    marginTop: 4,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  slaChips: {
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
+  slaChip: {
+    flex: 1,
     padding: spacing.md,
     borderRadius: borderRadius.md,
+    borderWidth: 1,
     flexDirection: 'row',
     gap: spacing.sm,
     alignItems: 'center',
   },
-  infoText: {
-    flex: 1,
+  slaLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  slaValue: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  stepsCard: {
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.md,
+    padding: spacing.md,
+    borderRadius: borderRadius.md,
+    gap: spacing.sm,
+  },
+  stepsTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  stepItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  stepText: {
     fontSize: 14,
   },
   buttonGroup: {
@@ -370,7 +478,7 @@ const styles = StyleSheet.create({
   },
   helperText: {
     fontSize: 12,
-    textAlign: 'center',
+    textAlign: 'left',
   },
   documentsCard: {
     marginHorizontal: spacing.md,
@@ -393,15 +501,16 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   typeSelector: {
-    marginTop: spacing.md,
-    paddingTop: spacing.md,
-    borderTopWidth: 1,
-    borderTopColor: '#e0e0e0',
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.md,
+    padding: spacing.md,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    gap: spacing.sm,
   },
   typeLabel: {
     fontSize: 14,
     fontWeight: '600',
-    marginBottom: spacing.sm,
   },
   typeButtons: {
     flexDirection: 'row',
@@ -412,6 +521,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: borderRadius.sm,
+    borderWidth: 1,
   },
   typeButtonText: {
     fontSize: 13,

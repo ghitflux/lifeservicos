@@ -68,8 +68,8 @@ export default function NovaSimulacao() {
         copyToCacheDirectory: true,
       });
 
-      if (result.type === 'success') {
-        setDocument(result);
+      if (!result.canceled && result.assets?.length) {
+        setDocument(result.assets[0]);
       }
     } catch (error) {
       console.error('Error picking document:', error);
@@ -87,16 +87,35 @@ export default function NovaSimulacao() {
     try {
       const formData = new FormData();
 
-      const fileExtension = document.uri.split('.').pop()?.toLowerCase() || 'jpg';
-      const mimeType = fileExtension === 'pdf' ? 'application/pdf' : `image/${fileExtension}`;
+      const uri = document.uri || document.fileCopyUri;
+      if (!uri) {
+        showError('Erro', 'Não foi possível ler o arquivo selecionado');
+        return;
+      }
+
+      const preferredName = document.name || document.fileName || 'contracheque';
+      const nameExt = preferredName.includes('.') ? preferredName.split('.').pop()?.toLowerCase() : undefined;
+      const uriExt = uri.split('.').pop()?.toLowerCase();
+      const fileExtension = nameExt || uriExt || 'jpg';
+      const allowedExtensions = ['jpg', 'jpeg', 'png', 'pdf'];
+      if (!allowedExtensions.includes(fileExtension)) {
+        showError('Formato inválido', 'Envie arquivos JPG, PNG ou PDF');
+        return;
+      }
+
+      const mimeType =
+        document.mimeType
+        || (fileExtension === 'pdf' ? 'application/pdf' : `image/${fileExtension === 'jpg' ? 'jpeg' : fileExtension}`);
+      const safeName = preferredName.includes('.') ? preferredName : `contracheque.${fileExtension}`;
 
       formData.append('document', {
-        uri: document.uri,
+        uri,
         type: mimeType,
-        name: document.name || `contracheque.${fileExtension}`,
+        name: safeName,
       } as any);
 
       formData.append('simulation_type', 'document_upload');
+      formData.append('document_type', 'contracheque');
 
       const response = await api.post('/mobile/simulations/upload', formData, {
         headers: {
