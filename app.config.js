@@ -21,7 +21,10 @@ module.exports = {
     ],
     ios: {
       supportsTablet: true,
-      bundleIdentifier: "com.applifedigital.app"
+      bundleIdentifier: "com.applifedigital.app",
+      infoPlist: {
+        NSCameraUsageDescription: "Precisamos acessar sua câmera para enviar documentos e fotos.",
+      }
     },
     android: {
       adaptiveIcon: {
@@ -30,6 +33,7 @@ module.exports = {
       },
       package: "com.applifedigital.app",
       permissions: [
+        "CAMERA",
         "RECEIVE_BOOT_COMPLETED",
         "VIBRATE",
         "USE_FINGERPRINT"
@@ -38,6 +42,7 @@ module.exports = {
     web: {},
     plugins: [
       "expo-router",
+      "expo-camera",
       "expo-secure-store",
       "expo-document-picker",
       "expo-image-picker",

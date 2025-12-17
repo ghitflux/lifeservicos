@@ -15,7 +15,7 @@ export default function Perfil() {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const { user, logout } = useAuth();
-  const { alert, showDestructive, showSuccess, showError, dismissAlert } = useAlert();
+  const { alert, showDestructive, dismissAlert } = useAlert();
   const [stats, setStats] = useState({ simulations: 0, activeContracts: 0 });
   const [loading, setLoading] = useState(true);
 
@@ -30,13 +30,24 @@ export default function Perfil() {
 
       const allSimulations = simulationsRes.data || [];
       const simulations = allSimulations.length;
-
+      
       // Contratos ativos são simulações aprovadas/efetivadas
       const activeContracts = allSimulations.filter((c: any) =>
-        c.status === 'approved' ||
-        c.status === 'disbursed' ||
-        c.status === 'active' ||
-        c.status === 'finance_approved'
+        [
+          'approved', 
+          'disbursed', 
+          'active', 
+          'finance_approved', 
+          'contracted', 
+          'integrated', 
+          'paid', 
+          'signed',
+          'contrato_efetivado',
+          'simulacao_aprovada',
+          'approved_by_client',
+          'aprovada_pelo_cliente',
+          'cliente_aprovada'
+        ].includes(c.status)
       ).length;
 
       setStats({ simulations, activeContracts });
@@ -53,21 +64,22 @@ export default function Perfil() {
 
   const handleLogout = async () => {
     await logout();
-    router.replace('/');
+    router.replace('/(auth)/login');
   };
 
   const handleDeleteAccount = () => {
     showDestructive(
       'Excluir Conta',
-      'Tem certeza que deseja excluir sua conta? Esta ação não pode ser desfeita e todos os seus dados serão permanentemente removidos.',
+      'Ao confirmar, seus dados de acesso serão removidos deste dispositivo e você retornará para a tela de login. Seus dados no sistema web não serão removidos.',
       async () => {
         try {
-          await api.delete('/mobile/account');
-          showSuccess('Conta Excluída', 'Sua conta foi excluída com sucesso');
           await logout();
-          router.replace('/');
-        } catch (error: any) {
-          showError('Erro', error?.response?.data?.detail || 'Não foi possível excluir sua conta');
+          router.replace({
+            pathname: '/(auth)/login',
+            params: { accountDeleted: '1' },
+          });
+        } catch {
+          router.replace('/(auth)/login');
         }
       }
     );
@@ -192,6 +204,20 @@ export default function Perfil() {
             <View style={styles.menuContent}>
               <Text style={[styles.menuText, { color: colors.text }]}>Ajuda e Suporte</Text>
               <Text style={[styles.menuSubtext, { color: colors.textSecondary }]}>Central de ajuda, contato</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
+          </Pressable>
+
+          <Pressable
+            style={[styles.menuItem, { backgroundColor: colors.card }]}
+            onPress={() => router.push('/screens/politicas')}
+          >
+            <Ionicons name="document-text-outline" size={24} color={colors.text} />
+            <View style={styles.menuContent}>
+              <Text style={[styles.menuText, { color: colors.text }]}>Políticas e Termos</Text>
+              <Text style={[styles.menuSubtext, { color: colors.textSecondary }]}>
+                Privacidade, Termos de Uso e Exclusão
+              </Text>
             </View>
             <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
           </Pressable>

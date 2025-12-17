@@ -146,7 +146,7 @@ export default function Dashboard() {
           <Pressable
             style={({ pressed }) => [
               styles.statusCard,
-              { backgroundColor: colors.card, opacity: pressed ? 0.7 : 1 }
+              { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1, opacity: pressed ? 0.7 : 1 }
             ]}
             onPress={() => router.push({
               pathname: '/screens/detalhes-simulacao',
@@ -188,7 +188,7 @@ export default function Dashboard() {
                 key={`sim-${activity.id}`}
                 style={({ pressed }) => [
                   styles.activityCard,
-                  { backgroundColor: colors.card, opacity: pressed ? 0.7 : 1 }
+                  { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1, opacity: pressed ? 0.7 : 1 }
                 ]}
                 onPress={() => router.push({
                   pathname: '/screens/detalhes-simulacao',

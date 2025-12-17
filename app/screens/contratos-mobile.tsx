@@ -124,10 +124,6 @@ export default function ContratosMobile() {
                   <Text style={[styles.label, { color: colors.textSecondary }]}>Parcelas</Text>
                   <Text style={[styles.value, { color: colors.text }]}>{item.installments}x de {formatCurrency(item.installment_value)}</Text>
                 </View>
-                <View style={styles.row}>
-                  <Text style={[styles.label, { color: colors.textSecondary }]}>Taxa de Juros</Text>
-                  <Text style={[styles.value, { color: colors.text }]}>{item.interest_rate.toFixed(2)}% a.m.</Text>
-                </View>
                 {item.disbursed_at && (
                   <View style={styles.row}>
                     <Text style={[styles.label, { color: colors.textSecondary }]}>Liberado em</Text>

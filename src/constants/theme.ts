@@ -1,11 +1,15 @@
 // Theme Colors
 export const darkColors = {
-  primary: '#4A90E2',
+  primary: '#9D6DD9',
   secondary: '#5856D6',
   success: '#4CAF50',
   warning: '#FFC107',
   error: '#E53E3E',
 
+  // Gradient background colors - premium dark purple
+  backgroundGradientStart: '#1A0B2E',  // Deep purple-black
+  backgroundGradientEnd: '#16213E',    // Dark navy-purple
+  
   // Dark theme backgrounds
   background: '#1A1A2E',
   backgroundSecondary: '#16213E',
@@ -15,20 +19,20 @@ export const darkColors = {
   // Dark theme text
   text: '#FFFFFF',
   textSecondary: '#B0B0B0',
-  textTertiary: '#8E8E93',
+  textTertiary: '#9CA3AF',
 
   // Dark theme borders and dividers
   border: '#3A506B',
   divider: '#2C2C4A',
-  placeholder: '#6B7280',
+  placeholder: '#9CA3AF',
 
   // Accent colors
-  accent: '#4A90E2',
-  accentLight: '#6BA3E8',
+  accent: '#9D6DD9',
+  accentLight: '#B794E8',
 };
 
 export const lightColors = {
-  primary: '#4A90E2',
+  primary: '#3B0951',
   secondary: '#5856D6',
   success: '#4CAF50',
   warning: '#FFC107',
@@ -36,29 +40,29 @@ export const lightColors = {
 
   // Light theme backgrounds
   background: '#FFFFFF',
-  backgroundSecondary: '#F5F5F7',
+  backgroundSecondary: '#F9FAFB',
   card: '#FFFFFF',
-  cardSecondary: '#F5F5F7',
+  cardSecondary: '#F9FAFB',
 
   // Light theme text
-  text: '#1A1A1A',
-  textSecondary: '#6B7280',
-  textTertiary: '#9CA3AF',
+  text: '#111827',
+  textSecondary: '#4B5563',
+  textTertiary: '#6B7280',
 
   // Light theme borders and dividers
-  border: '#E5E7EB',
-  divider: '#F3F4F6',
+  border: '#D1D5DB',
+  divider: '#E5E7EB',
   placeholder: '#9CA3AF',
 
   // Accent colors
-  accent: '#4A90E2',
-  accentLight: '#6BA3E8',
+  accent: '#3B0951',
+  accentLight: '#8B4FD9',
 };
 
-export type ThemeMode = 'light' | 'dark';
+export type ThemeMode = "light" | "dark";
 
 export const getColors = (mode: ThemeMode) => {
-  return mode === 'dark' ? darkColors : lightColors;
+  return mode === "dark" ? darkColors : lightColors;
 };
 
 // Default export for backward compatibility (dark mode)
@@ -82,26 +86,26 @@ export const borderRadius = {
 export const typography = {
   h1: {
     fontSize: 32,
-    fontWeight: 'bold' as const,
+    fontWeight: "bold" as const,
   },
   h2: {
     fontSize: 24,
-    fontWeight: 'bold' as const,
+    fontWeight: "bold" as const,
   },
   h3: {
     fontSize: 20,
-    fontWeight: '600' as const,
+    fontWeight: "600" as const,
   },
   body: {
     fontSize: 16,
-    fontWeight: 'normal' as const,
+    fontWeight: "normal" as const,
   },
   caption: {
     fontSize: 14,
-    fontWeight: 'normal' as const,
+    fontWeight: "normal" as const,
   },
   small: {
     fontSize: 12,
-    fontWeight: 'normal' as const,
+    fontWeight: "normal" as const,
   },
 };

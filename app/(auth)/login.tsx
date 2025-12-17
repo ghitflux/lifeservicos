@@ -1,6 +1,6 @@
 import { View, Text, TextInput, StyleSheet, Pressable, ActivityIndicator } from 'react-native';
-import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
 import { useTheme } from '@/contexts/ThemeContext';
 import { typography, borderRadius, spacing } from '@/constants/theme';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,12 +10,23 @@ import { useAlert } from '@/hooks/useAlert';
 
 export default function Login() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ accountDeleted?: string }>();
   const { colors } = useTheme();
   const { login } = useAuth();
-  const { alert, showError, dismissAlert } = useAlert();
+  const { alert, showError, showSuccess, dismissAlert } = useAlert();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [accountDeletedShown, setAccountDeletedShown] = useState(false);
+
+  useEffect(() => {
+    if (accountDeletedShown) return;
+    if (!params?.accountDeleted) return;
+
+    showSuccess('Conta excluída', 'Sua conta foi excluída com sucesso.');
+    setAccountDeletedShown(true);
+  }, [accountDeletedShown, params?.accountDeleted, showSuccess]);
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -58,14 +69,22 @@ export default function Login() {
         />
 
         <Text style={[styles.label, { color: colors.text }]}>Senha</Text>
-        <TextInput
-          style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, color: colors.text }]}
-          placeholder="••••••••"
-          placeholderTextColor={colors.placeholder}
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-        />
+        <View style={styles.passwordContainer}>
+          <TextInput
+            style={[styles.passwordInput, { backgroundColor: colors.card, borderColor: colors.border, color: colors.text }]}
+            placeholder="••••••••"
+            placeholderTextColor={colors.placeholder}
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry={!showPassword}
+          />
+          <Pressable 
+            style={styles.eyeIcon}
+            onPress={() => setShowPassword(!showPassword)}
+          >
+            <Ionicons name={showPassword ? "eye-off" : "eye"} size={20} color={colors.textSecondary} />
+          </Pressable>
+        </View>
 
         <Pressable
           style={[styles.button, { backgroundColor: colors.primary, opacity: loading ? 0.7 : 1 }]}
@@ -73,21 +92,10 @@ export default function Login() {
           disabled={loading}
         >
           {loading ? (
-            <ActivityIndicator color={colors.text} />
+            <ActivityIndicator color="#FFFFFF" />
           ) : (
-            <Text style={[styles.buttonText, { color: colors.text }]}>Entrar</Text>
+            <Text style={[styles.buttonText, { color: '#FFFFFF' }]}>Entrar</Text>
           )}
-        </Pressable>
-
-        <View style={styles.separator}>
-          <View style={[styles.separatorLine, { backgroundColor: colors.border }]} />
-          <Text style={[styles.separatorText, { color: colors.textSecondary }]}>OU CONTINUE COM</Text>
-          <View style={[styles.separatorLine, { backgroundColor: colors.border }]} />
-        </View>
-
-        <Pressable style={[styles.googleButton, { backgroundColor: colors.card }]}>
-          <Ionicons name="logo-google" size={20} color={colors.text} />
-          <Text style={[styles.googleButtonText, { color: colors.text }]}>Continuar com Google</Text>
         </Pressable>
 
         <Pressable onPress={() => router.push('/(auth)/register')}>
@@ -151,6 +159,22 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     fontSize: 16,
   },
+  passwordContainer: {
+    position: 'relative',
+  },
+  passwordInput: {
+    borderWidth: 1,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    paddingRight: 48,
+    fontSize: 16,
+  },
+  eyeIcon: {
+    position: 'absolute',
+    right: spacing.md,
+    top: '50%',
+    transform: [{ translateY: -10 }],
+  },
   button: {
     padding: spacing.md,
     borderRadius: borderRadius.md,
@@ -158,31 +182,6 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
   },
   buttonText: {
-    fontSize: 16,
-  },
-  separator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: spacing.lg,
-  },
-  separatorLine: {
-    flex: 1,
-    height: 1,
-  },
-  separatorText: {
-    fontSize: 12,
-    marginHorizontal: spacing.md,
-    textTransform: 'uppercase',
-  },
-  googleButton: {
-    padding: spacing.md,
-    borderRadius: borderRadius.md,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-  },
-  googleButtonText: {
     fontSize: 16,
   },
   link: {

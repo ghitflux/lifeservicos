@@ -57,6 +57,9 @@ export default function MobileNav() {
             style={styles.navItem}
             onPress={() => handleNavigate(item.route)}
           >
+            {active && (
+              <View style={[styles.activeIndicator, { backgroundColor: colors.accent }]} />
+            )}
             <Ionicons
               name={item.icon}
               size={24}
@@ -92,6 +95,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 4,
     gap: 4,
+    position: 'relative',
+  },
+  activeIndicator: {
+    position: 'absolute',
+    top: -8,
+    width: 32,
+    height: 3,
+    borderRadius: 2,
   },
   navLabel: {
     fontSize: 12,

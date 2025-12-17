@@ -8,6 +8,9 @@ import { borderRadius, spacing } from '@/constants/theme';
 export default function AjudaSuporte() {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
+  const supportEmail = 'appcontato@lifedigital.cloud';
+  const supportPhoneDigits = '+558699023302';
+  const supportPhoneLabel = '86 9902-3302';
 
   const faqs = [
     {
@@ -32,16 +35,12 @@ export default function AjudaSuporte() {
     },
   ];
 
-  const handleChat = () => {
-    console.log('Abrir chat online');
-  };
-
   const handleEmail = () => {
-    Linking.openURL('mailto:suporte@lifedigital.com.br');
+    Linking.openURL(`mailto:${supportEmail}`);
   };
 
   const handlePhone = () => {
-    Linking.openURL('tel:08001234567');
+    Linking.openURL(`tel:${supportPhoneDigits}`);
   };
 
   return (
@@ -56,24 +55,13 @@ export default function AjudaSuporte() {
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.text }]}>Entre em Contato</Text>
 
-          <Pressable style={[styles.contactCard, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={handleChat}>
-            <View style={[styles.iconWrapper, { backgroundColor: colors.accent + '20' }]}>
-              <Ionicons name="chatbubble-ellipses-outline" size={24} color={colors.accent} />
-            </View>
-            <View style={styles.contactInfo}>
-              <Text style={[styles.contactLabel, { color: colors.text }]}>Chat Online</Text>
-              <Text style={[styles.contactSubtext, { color: colors.textSecondary }]}>Atendimento imediato</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
-          </Pressable>
-
           <Pressable style={[styles.contactCard, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={handleEmail}>
             <View style={[styles.iconWrapper, { backgroundColor: colors.accent + '20' }]}>
               <Ionicons name="mail-outline" size={24} color={colors.accent} />
             </View>
             <View style={styles.contactInfo}>
               <Text style={[styles.contactLabel, { color: colors.text }]}>Email</Text>
-              <Text style={[styles.contactSubtext, { color: colors.textSecondary }]}>suporte@lifedigital.com.br</Text>
+              <Text style={[styles.contactSubtext, { color: colors.textSecondary }]}>{supportEmail}</Text>
             </View>
             <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
           </Pressable>
@@ -84,7 +72,7 @@ export default function AjudaSuporte() {
             </View>
             <View style={styles.contactInfo}>
               <Text style={[styles.contactLabel, { color: colors.text }]}>Telefone</Text>
-              <Text style={[styles.contactSubtext, { color: colors.textSecondary }]}>0800 123 4567</Text>
+              <Text style={[styles.contactSubtext, { color: colors.textSecondary }]}>{supportPhoneLabel}</Text>
             </View>
             <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
           </Pressable>

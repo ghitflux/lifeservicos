@@ -1,29 +1,59 @@
-import { View, Text, StyleSheet, ScrollView, Switch, Pressable } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Switch } from 'react-native';
 import { useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Button, Header, MobileNav, Input, ThemeToggle } from '@/components';
+import { AlertDialog, Button, Header, MobileNav, Input } from '@/components';
 import { useTheme } from '@/contexts/ThemeContext';
 import { borderRadius, spacing } from '@/constants/theme';
+import { api } from '@/services/api';
+import { useAlert } from '@/hooks/useAlert';
 
 export default function SegurancaPrivacidade() {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
+  const { alert, showError, showSuccess, dismissAlert } = useAlert();
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [emailNotifications, setEmailNotifications] = useState(false);
   const [pushNotifications, setPushNotifications] = useState(true);
   const [usageAnalysis, setUsageAnalysis] = useState(true);
+  const [changingPassword, setChangingPassword] = useState(false);
 
-  const handlePasswordChange = () => {
-    // Implementar lógica de alteração de senha
-    if (newPassword !== confirmPassword) {
-      // Mostrar erro
+  const handlePasswordChange = async () => {
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      showError('Erro', 'Por favor, preencha todos os campos');
       return;
     }
-    // Chamar API para alterar senha
-    console.log('Alterar senha');
+
+    if (newPassword !== confirmPassword) {
+      showError('Erro', 'As senhas não coincidem');
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      showError('Erro', 'A nova senha deve ter no mínimo 6 caracteres');
+      return;
+    }
+
+    try {
+      setChangingPassword(true);
+      await api.post('/auth/change-password', {
+        current_password: currentPassword,
+        new_password: newPassword,
+      });
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      showSuccess('Sucesso', 'Senha alterada com sucesso');
+    } catch (error: any) {
+      const message =
+        error?.response?.data?.detail
+        || error?.response?.data?.message
+        || 'Não foi possível alterar a senha';
+      showError('Erro', message);
+    } finally {
+      setChangingPassword(false);
+    }
   };
 
   return (
@@ -78,9 +108,10 @@ export default function SegurancaPrivacidade() {
             </View>
 
             <Button
-              title="Alterar Senha"
+              title={changingPassword ? 'Alterando...' : 'Alterar Senha'}
               onPress={handlePasswordChange}
               style={styles.submitButton}
+              disabled={changingPassword}
             />
           </View>
         </View>
@@ -95,21 +126,6 @@ export default function SegurancaPrivacidade() {
           </View>
 
           <View style={styles.settingsList}>
-            <View style={[styles.settingItem, { borderBottomColor: colors.border }]}>
-              <View style={styles.settingContent}>
-                <Text style={[styles.settingLabel, { color: colors.text }]}>Notificações por Email</Text>
-                <Text style={[styles.settingDescription, { color: colors.textSecondary }]}>
-                  Receber atualizações por email
-                </Text>
-              </View>
-              <Switch
-                value={emailNotifications}
-                onValueChange={setEmailNotifications}
-                trackColor={{ false: colors.border, true: colors.accent }}
-                thumbColor={colors.text}
-              />
-            </View>
-
             <View style={[styles.settingItem, { borderBottomColor: colors.border }]}>
               <View style={styles.settingContent}>
                 <Text style={[styles.settingLabel, { color: colors.text }]}>Notificações Push</Text>
@@ -140,18 +156,22 @@ export default function SegurancaPrivacidade() {
               />
             </View>
 
-            <View style={styles.settingItem}>
-              <View style={styles.settingContent}>
-                <Text style={[styles.settingLabel, { color: colors.text }]}>Tema</Text>
-                <Text style={[styles.settingDescription, { color: colors.textSecondary }]}>
-                  Modo claro ou escuro
-                </Text>
-              </View>
-              <ThemeToggle />
-            </View>
+
           </View>
         </View>
       </ScrollView>
+
+      {alert && (
+        <AlertDialog
+          visible={!!alert}
+          title={alert.title}
+          message={alert.message}
+          buttons={alert.buttons}
+          icon={alert.icon as any}
+          iconColor={alert.iconColor}
+          onDismiss={dismissAlert}
+        />
+      )}
       
       <MobileNav />
     </SafeAreaView>

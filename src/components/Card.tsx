@@ -11,7 +11,7 @@ interface CardProps {
 export default function Card({ children, style }: CardProps) {
   const { colors } = useTheme();
   return (
-    <View style={[styles.card, { backgroundColor: colors.card }, style]}>
+    <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }, style]}>
       {children}
     </View>
   );

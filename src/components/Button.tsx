@@ -39,7 +39,7 @@ export default function Button({
       case 'outline':
         return { color: colors.accent };
       default:
-        return { color: colors.text };
+        return { color: '#FFFFFF' };
     }
   };
 
@@ -56,7 +56,7 @@ export default function Button({
       disabled={disabled || loading}
     >
       {loading ? (
-        <ActivityIndicator color={variant === 'outline' ? colors.accent : colors.text} />
+        <ActivityIndicator color={variant === 'outline' ? colors.accent : '#FFFFFF'} />
       ) : (
         <Text style={[styles.buttonText, getTextStyle(), textStyle]}>{title}</Text>
       )}

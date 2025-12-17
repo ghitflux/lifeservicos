@@ -7,6 +7,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { AlertDialog } from '@/components';
 import { useAlert } from '@/hooks/useAlert';
 import { maskCPF, maskPhone } from '@/utils/formatters';
+import { Ionicons } from '@expo/vector-icons';
 
 export default function Register() {
   const router = useRouter();
@@ -20,6 +21,9 @@ export default function Register() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [consentCreditSimulation, setConsentCreditSimulation] = useState(false);
 
   const handleRegister = async () => {
     // Validations
@@ -51,6 +55,14 @@ export default function Register() {
       return;
     }
 
+    if (!consentCreditSimulation) {
+      showError(
+        'Erro',
+        'Para concluir o cadastro, você precisa autorizar o acesso aos seus dados para finalidade de simulação de crédito.'
+      );
+      return;
+    }
+
     setLoading(true);
     const result = await register({
       name,
@@ -58,6 +70,7 @@ export default function Register() {
       password,
       cpf: cpfNumbers,
       phone: phoneNumbers,
+      consent_credit_simulation: consentCreditSimulation,
     });
     setLoading(false);
 
@@ -116,23 +129,56 @@ export default function Register() {
           maxLength={15}
         />
 
-        <TextInput
-          style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, color: colors.text }]}
-          placeholder="Senha"
-          placeholderTextColor={colors.placeholder}
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-        />
+        <View style={styles.passwordContainer}>
+          <TextInput
+            style={[styles.passwordInput, { backgroundColor: colors.card, borderColor: colors.border, color: colors.text }]}
+            placeholder="Senha"
+            placeholderTextColor={colors.placeholder}
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry={!showPassword}
+          />
+          <Pressable 
+            style={styles.eyeIcon}
+            onPress={() => setShowPassword(!showPassword)}
+          >
+            <Ionicons name={showPassword ? "eye-off" : "eye"} size={20} color={colors.textSecondary} />
+          </Pressable>
+        </View>
 
-        <TextInput
-          style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, color: colors.text }]}
-          placeholder="Confirmar senha"
-          placeholderTextColor={colors.placeholder}
-          value={confirmPassword}
-          onChangeText={setConfirmPassword}
-          secureTextEntry
-        />
+        <View style={styles.passwordContainer}>
+          <TextInput
+            style={[styles.passwordInput, { backgroundColor: colors.card, borderColor: colors.border, color: colors.text }]}
+            placeholder="Confirmar senha"
+            placeholderTextColor={colors.placeholder}
+            value={confirmPassword}
+            onChangeText={setConfirmPassword}
+            secureTextEntry={!showConfirmPassword}
+          />
+          <Pressable 
+            style={styles.eyeIcon}
+            onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+          >
+            <Ionicons name={showConfirmPassword ? "eye-off" : "eye"} size={20} color={colors.textSecondary} />
+          </Pressable>
+        </View>
+
+        <Pressable
+          style={[styles.consentRow, { backgroundColor: colors.card, borderColor: colors.border }]}
+          onPress={() => setConsentCreditSimulation((prev) => !prev)}
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: consentCreditSimulation }}
+        >
+          <Ionicons
+            name={consentCreditSimulation ? 'checkbox' : 'square-outline'}
+            size={22}
+            color={consentCreditSimulation ? colors.accent : colors.textSecondary}
+          />
+          <Text style={[styles.consentText, { color: colors.textSecondary }]}>
+            Ao me cadastrar, autorizo o acesso aos meus dados para finalidade de simulação de crédito.{' '}
+            <Text style={[styles.consentRequired, { color: colors.error }]}>*</Text>
+          </Text>
+        </Pressable>
 
         <Pressable
           style={[styles.button, { backgroundColor: colors.primary, opacity: loading ? 0.7 : 1 }]}
@@ -140,9 +186,9 @@ export default function Register() {
           disabled={loading}
         >
           {loading ? (
-            <ActivityIndicator color={colors.text} />
+            <ActivityIndicator color="#FFFFFF" />
           ) : (
-            <Text style={[styles.buttonText, { color: colors.text }]}>Criar Conta</Text>
+            <Text style={[styles.buttonText, { color: '#FFFFFF' }]}>Criar Conta</Text>
           )}
         </Pressable>
 
@@ -192,6 +238,23 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     fontSize: 16,
   },
+  passwordContainer: {
+    position: 'relative',
+    marginBottom: spacing.md,
+  },
+  passwordInput: {
+    borderWidth: 1,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    paddingRight: 48,
+    fontSize: 16,
+  },
+  eyeIcon: {
+    position: 'absolute',
+    right: spacing.md,
+    top: '50%',
+    transform: [{ translateY: -10 }],
+  },
   button: {
     padding: spacing.md,
     borderRadius: borderRadius.md,
@@ -205,6 +268,22 @@ const styles = StyleSheet.create({
   link: {
     textAlign: 'center',
     marginTop: spacing.sm,
+  },
+  consentRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    borderWidth: 1,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+  },
+  consentText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  consentRequired: {
+    fontWeight: '700',
   },
 });
 

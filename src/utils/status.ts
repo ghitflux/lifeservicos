@@ -40,7 +40,7 @@ export function mapSimulationStatus(status?: string): { label: string; tone: Sta
     case 'approved_by_client':
     case 'aprovada_pelo_cliente':
     case 'cliente_aprovada':
-      return { label: 'Aprovado', tone: 'success' };
+      return { label: 'Aprovada pelo cliente', tone: 'success' };
     case 'financeiro_pendente':
       return { label: 'No Financeiro', tone: 'warning' };
     case 'contrato_efetivado':

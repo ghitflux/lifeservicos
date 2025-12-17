@@ -1,7 +1,7 @@
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Alert } from 'react-native';
 import { useState, useEffect } from 'react';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Input, Button, Header, MobileNav } from '@/components';
+import { Input, Button, Header, MobileNav, Toast } from '@/components';
 import { useTheme } from '@/contexts/ThemeContext';
 import { borderRadius, spacing } from '@/constants/theme';
 import { useAuth } from '@/hooks/useAuth';
@@ -24,10 +24,19 @@ export default function DadosPessoais() {
   const [neighborhood, setNeighborhood] = useState('');
   const [city, setCity] = useState('');
   const [state, setState] = useState('');
+  const [showTipToast, setShowTipToast] = useState(false);
+  const [tipToastShown, setTipToastShown] = useState(false);
 
   useEffect(() => {
     loadUserData();
   }, [user]);
+
+  useEffect(() => {
+    if (loading) return;
+    if (tipToastShown) return;
+    setShowTipToast(true);
+    setTipToastShown(true);
+  }, [loading, tipToastShown]);
 
   const loadUserData = async () => {
     try {
@@ -72,6 +81,14 @@ export default function DadosPessoais() {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
       <Header title="Dados Pessoais" showBackButton />
+
+      <Toast
+        visible={showTipToast}
+        tone="info"
+        message="As chances de aprovação são maiores quando todos os dados estão preenchidos."
+        onHide={() => setShowTipToast(false)}
+        style={{ top: spacing.lg }}
+      />
 
       <ScrollView
         style={styles.content}

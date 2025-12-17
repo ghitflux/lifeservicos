@@ -50,7 +50,9 @@ export default function Historico() {
         const normalizedType =
           sim.simulation_type === 'document_upload'
             ? 'Solicitação de Simulação'
-            : (sim.simulation_type || '').replace(/_/g, ' ') || 'Simulação';
+            : sim.simulation_type === 'multi_bank'
+              ? 'Empréstimo Pessoal'
+              : (sim.simulation_type || '').replace(/_/g, ' ') || 'Simulação';
         return {
           ...sim,
           simulation_type: normalizedType,
@@ -157,7 +159,9 @@ export default function Historico() {
                   <View style={styles.cardHeader}>
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.cardType, { color: colors.text }]}>
-                        {simulation.product?.name || simulation.simulation_type || 'Simulação'}
+                        {simulation.product?.name && simulation.product.name !== 'Crédito Pessoal' 
+                          ? simulation.product.name 
+                          : simulation.simulation_type || 'Simulação'}
                       </Text>
                       {simulation.bank?.name && (
                         <Text style={[styles.cardBank, { color: colors.textSecondary }]}>
@@ -181,7 +185,6 @@ export default function Historico() {
                   </View>
                   <View style={styles.cardFooter}>
                     <Text style={[styles.cardStatus, { color: statusColor }]}>
-                      {statusMeta.label}
                     </Text>
                     <Text style={[styles.cardDate, { color: colors.textSecondary }]}>
                       {formatDateSafe(simulation.created_at)}
@@ -189,7 +192,10 @@ export default function Historico() {
                   </View>
                 </View>
                 <Pressable
-                  style={[styles.cardAction, { borderTopColor: colors.border }]}
+                  style={[styles.cardAction, { 
+                    borderTopColor: colors.border,
+                    backgroundColor: colors.cardSecondary + '40', // Slight tint
+                  }]}
                   onPress={handleNavigateToDetails}
                 >
                   <Text style={[styles.cardActionText, { color: colors.accent }]}>Ver Detalhes</Text>
@@ -277,12 +283,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: spacing.sm,
+    padding: spacing.md,
     borderTopWidth: 1,
     gap: 8,
   },
   cardActionText: {
     fontSize: 14,
+    fontWeight: '600',
   },
   emptyState: {
     padding: 60,

@@ -67,7 +67,14 @@ export function useAuth() {
     }
   };
 
-  const register = async (data: { name: string; email: string; password: string; cpf?: string; phone?: string }) => {
+  const register = async (data: {
+    name: string;
+    email: string;
+    password: string;
+    cpf?: string;
+    phone?: string;
+    consent_credit_simulation?: boolean;
+  }) => {
     try {
       await api.post('/mobile/register', data);
       return { success: true };
