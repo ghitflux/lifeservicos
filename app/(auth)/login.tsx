@@ -1,4 +1,4 @@
-import { View, Text, TextInput, StyleSheet, Pressable, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, StyleSheet, Pressable, ActivityIndicator, Image } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -7,6 +7,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { AlertDialog } from '@/components';
 import { useAuth } from '@/hooks/useAuth';
 import { useAlert } from '@/hooks/useAlert';
+
+const LifeAppLogo = require('../../assets/lifeapp.png');
 
 export default function Login() {
   const router = useRouter();
@@ -48,9 +50,7 @@ export default function Login() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={styles.iconContainer}>
-        <View style={[styles.iconCircle, { backgroundColor: colors.card, borderColor: colors.accent }]}>
-          <Ionicons name="trending-up" size={32} color={colors.accent} />
-        </View>
+        <Image source={LifeAppLogo} style={styles.logo} resizeMode="contain" />
       </View>
       
       <Text style={[styles.title, { color: colors.text }]}>Bem-vindo de volta</Text>
@@ -127,13 +127,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: spacing.xl,
   },
-  iconCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
+  logo: {
+    width: 112,
+    height: 112,
+    borderRadius: 24,
   },
   title: {
     fontSize: 32,

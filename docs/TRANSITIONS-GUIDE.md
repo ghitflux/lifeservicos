@@ -13,7 +13,7 @@ As transições entre telas apresentavam:
 ### 1. Splash Screen Escura (app.config.js)
 ```javascript
 splash: {
-  backgroundColor: "#1A1A2E" // Alinhado com tema dark
+  backgroundColor: "#121212" // Alinhado com tema dark
 }
 ```
 **Efeito**: Sem flash branco ao iniciar
@@ -162,7 +162,7 @@ interface SafeScreenContainerProps {
 
 **Depois:**
 ```
-1. App inicia com splash escura (#1A1A2E)
+1. App inicia com splash escura (#121212)
 2. ThemeProvider carrega tema async
 3. useSplashScreen() aguarda loading === false
 4. Splash oculta automaticamente quando pronto
@@ -174,7 +174,7 @@ interface SafeScreenContainerProps {
 
 ```typescript
 cardStyle: {
-  backgroundColor: theme === 'dark' ? '#1A1A2E' : '#FFFFFF'
+  backgroundColor: theme === 'dark' ? '#121212' : '#FFFFFF'
 }
 // Sincroniza o fundo do card com o tema
 

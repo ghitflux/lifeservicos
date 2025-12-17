@@ -15,7 +15,7 @@ function ThemedStatusBar() {
 }
 
 function RootLayoutContent() {
-  const { theme } = useTheme();
+  const { theme, colors } = useTheme();
   useSplashScreen(); // Handle splash screen hiding
   usePushNotifications(); // Initialize push notifications
   useCameraPermissionOnFirstLaunch(); // Ask camera permission on first app access
@@ -28,7 +28,7 @@ function RootLayoutContent() {
           headerShown: false,
           animationEnabled: true,
           // Smooth transitions
-          cardStyle: { backgroundColor: theme === 'dark' ? '#1A1A2E' : '#FFFFFF' },
+          cardStyle: { backgroundColor: theme === 'dark' ? colors.background : '#FFFFFF' },
           cardStyleInterpolator: ({ current, layouts }) => {
             return {
               cardStyle: {

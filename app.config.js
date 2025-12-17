@@ -10,11 +10,11 @@ module.exports = {
     version: "1.0.0",
     orientation: "portrait",
     userInterfaceStyle: "automatic",
-    icon: "./assets/icon.png",
+    icon: "./assets/lifeapp.png",
     splash: {
       image: "./assets/splash.png",
       resizeMode: "contain",
-      backgroundColor: "#1A1A2E"
+      backgroundColor: "#121212"
     },
     assetBundlePatterns: [
       "**/*"
@@ -28,8 +28,8 @@ module.exports = {
     },
     android: {
       adaptiveIcon: {
-        foregroundImage: "./assets/adaptive-icon.png",
-        backgroundColor: "#1A1A2E"
+        foregroundImage: "./assets/lifeapp.png",
+        backgroundColor: "#121212"
       },
       package: "com.applifedigital.app",
       permissions: [
@@ -49,7 +49,7 @@ module.exports = {
       [
         "expo-notifications",
         {
-          "color": "#1A1A2E"
+          "color": "#121212"
         }
       ]
     ],

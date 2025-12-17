@@ -1,20 +1,21 @@
 // Theme Colors
 export const darkColors = {
-  primary: '#9D6DD9',
-  secondary: '#5856D6',
+  // Near-black palette (requested #121212)
+  primary: '#1A1A1A',
+  secondary: '#121212',
   success: '#4CAF50',
   warning: '#FFC107',
   error: '#E53E3E',
 
-  // Gradient background colors - premium dark purple
-  backgroundGradientStart: '#1A0B2E',  // Deep purple-black
-  backgroundGradientEnd: '#16213E',    // Dark navy-purple
+  // Gradient/background colors - near black
+  backgroundGradientStart: '#0B0B0B',
+  backgroundGradientEnd: '#121212',
   
   // Dark theme backgrounds
-  background: '#1A1A2E',
-  backgroundSecondary: '#16213E',
-  card: '#2C2C4A',
-  cardSecondary: '#3A506B',
+  background: '#0B0B0B',
+  backgroundSecondary: '#0E0E0E',
+  card: '#121212',
+  cardSecondary: '#161616',
 
   // Dark theme text
   text: '#FFFFFF',
@@ -22,13 +23,13 @@ export const darkColors = {
   textTertiary: '#9CA3AF',
 
   // Dark theme borders and dividers
-  border: '#3A506B',
-  divider: '#2C2C4A',
+  border: '#242424',
+  divider: '#1E1E1E',
   placeholder: '#9CA3AF',
 
-  // Accent colors
-  accent: '#9D6DD9',
-  accentLight: '#B794E8',
+  // Accent colors (keep subtle/near-black)
+  accent: '#1F1F1F',
+  accentLight: '#2A2A2A',
 };
 
 export const lightColors = {
