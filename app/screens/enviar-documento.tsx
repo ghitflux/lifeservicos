@@ -12,6 +12,9 @@ import { api } from '@/services/api';
 import { useAlert } from '@/hooks/useAlert';
 import * as SecureStore from 'expo-secure-store';
 
+const toSecureStoreKeyPart = (value: string) => String(value || '').trim().replace(/[^A-Za-z0-9._-]/g, '_');
+const pendingReuploadKey = (simulationId: string) => `pendingReupload_v1_${toSecureStoreKeyPart(simulationId)}`;
+
 export default function EnviarDocumento() {
   const router = useRouter();
   const params = useLocalSearchParams();
@@ -41,7 +44,7 @@ export default function EnviarDocumento() {
       setAnalystNotes(String(params.analystNotes));
     }
     if (params.simulationId) {
-      setSimulationId(String(params.simulationId));
+      setSimulationId(String(params.simulationId).trim());
     }
   }, [params]);
 
@@ -139,6 +142,7 @@ export default function EnviarDocumento() {
 
       if (successCount > 0) {
         if (isPendingReuploadContext) {
+          const safeId = toSecureStoreKeyPart(simulationId);
           const signature = JSON.stringify({
             analystNotes: analystNotes.trim(),
             pendingDocs: [...pendingDocs]
@@ -148,10 +152,12 @@ export default function EnviarDocumento() {
               }))
               .sort((a, b) => (a.type + a.description).localeCompare(b.type + b.description)),
           });
-          await SecureStore.setItemAsync(
-            `pendingReupload:v1:${simulationId}`,
-            JSON.stringify({ sentAt: new Date().toISOString(), signature })
-          );
+          if (safeId) {
+            await SecureStore.setItemAsync(
+              pendingReuploadKey(safeId),
+              JSON.stringify({ sentAt: new Date().toISOString(), signature })
+            );
+          }
 
           setSelectedFiles([]);
           setDocumentType('Contracheque');

@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import { Camera } from 'expo-camera';
 
-const CAMERA_PERMISSION_REQUESTED_KEY = 'cameraPermissionRequested:v1';
+const CAMERA_PERMISSION_REQUESTED_KEY = 'cameraPermissionRequested_v1';
 
 export function useCameraPermissionOnFirstLaunch() {
   useEffect(() => {
@@ -27,4 +27,3 @@ export function useCameraPermissionOnFirstLaunch() {
     };
   }, []);
 }
-

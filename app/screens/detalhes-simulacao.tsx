@@ -13,6 +13,11 @@ import { mapSimulationStatus } from '@/utils/status';
 import { useAuth } from '@/hooks/useAuth';
 import * as SecureStore from 'expo-secure-store';
 
+const toSecureStoreKeyPart = (value: string) => String(value || '').trim().replace(/[^A-Za-z0-9._-]/g, '_');
+const pendingReuploadKey = (simulationId: string) => `pendingReupload_v1_${toSecureStoreKeyPart(simulationId)}`;
+const roundCurrency = (value: number) => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+const isMarginBank = (bankName: string) => /margem/i.test(bankName || '');
+
 interface Simulation {
   id: string;
   simulation_type: string;
@@ -46,6 +51,8 @@ export default function DetalhesSimulacao() {
   const [pendingReuploadLocked, setPendingReuploadLocked] = useState(!!params?.pendingReupload);
   const [showReuploadToast, setShowReuploadToast] = useState(false);
   const [reuploadToastShown, setReuploadToastShown] = useState(false);
+  const [showClientApprovedToast, setShowClientApprovedToast] = useState(false);
+  const [clientApprovedToastShown, setClientApprovedToastShown] = useState(false);
   const pendingDocs = useMemo(() => {
     const raw = Array.isArray((simulation as any)?.pending_documents)
       ? ((simulation as any)?.pending_documents as any[])
@@ -82,14 +89,91 @@ export default function DetalhesSimulacao() {
         .sort((a, b) => (a.type + a.description).localeCompare(b.type + b.description)),
     });
   }, [analystNotes, pendingDocs]);
-  const liberadoTotal = useMemo(() => {
-    if (!simulation) return 0;
+  const simulationTotals = useMemo(() => {
+    const fallback = {
+      totalParcela: 0,
+      saldoTotal: 0,
+      liberadoTotal: 0,
+      seguroObrigatorio: 0,
+      totalFinanciado: 0,
+      custoConsultoria: 0,
+      liberadoCliente: 0,
+      hasCalculation: false,
+    };
+
+    if (!simulation) return fallback;
+
     const banks = Array.isArray(simulation.banks_json) ? simulation.banks_json : [];
-    const totalFromBanks = banks.reduce((sum, bank) => sum + Number(bank?.valorLiberado || 0), 0);
-    if (totalFromBanks > 0) return totalFromBanks;
-    if (simulation.total_amount && simulation.total_amount > 0) return simulation.total_amount;
-    return simulation.requested_amount || 0;
+    const hasCalculation = banks.length > 0;
+
+    const seguroObrigatorio = Number(simulation.seguro || 0);
+    const percentualConsultoria = Number(simulation.percentual_consultoria || 0);
+    const coeficiente = parseFloat(String(simulation.coeficiente || '').replace(',', '.'));
+
+    const totalParcela = banks.reduce((sum, bank) => sum + Number(bank?.parcela || 0), 0);
+
+    const shouldComputeFromCoef = hasCalculation && Number.isFinite(coeficiente) && coeficiente > 0;
+
+    if (shouldComputeFromCoef) {
+      const bancosReais = banks.filter((b: any) => !isMarginBank(String(b?.bank || b?.banco || '')));
+      const bancosMargem = banks.filter((b: any) => isMarginBank(String(b?.bank || b?.banco || '')));
+
+      const totalFinanciado = bancosReais.reduce((sum: number, bank: any) => {
+        const parcela = Number(bank?.parcela || 0);
+        return sum + parcela / coeficiente;
+      }, 0);
+
+      const saldoTotal = bancosReais.reduce((sum: number, bank: any) => sum + Number(bank?.saldoDevedor || 0), 0);
+
+      const liberadoTotal = bancosReais.reduce((sum: number, bank: any) => {
+        const parcela = Number(bank?.parcela || 0);
+        const saldoDevedor = Number(bank?.saldoDevedor || 0);
+        const financiado = parcela / coeficiente;
+        const liberado = Math.abs(financiado - saldoDevedor);
+        return sum + liberado;
+      }, 0);
+
+      const valorASubtrair = bancosMargem.reduce((sum: number, bank: any) => {
+        const parcela = Math.abs(Number(bank?.parcela || 0));
+        return sum + parcela / coeficiente;
+      }, 0);
+
+      const custoConsultoria = totalFinanciado * (percentualConsultoria / 100);
+      const valorLiquido = liberadoTotal - seguroObrigatorio;
+      const liberadoCliente = valorLiquido - custoConsultoria - valorASubtrair;
+
+      return {
+        totalParcela: roundCurrency(totalParcela),
+        saldoTotal: roundCurrency(saldoTotal),
+        liberadoTotal: roundCurrency(liberadoTotal),
+        seguroObrigatorio: roundCurrency(seguroObrigatorio),
+        totalFinanciado: roundCurrency(totalFinanciado),
+        custoConsultoria: roundCurrency(custoConsultoria),
+        liberadoCliente: roundCurrency(liberadoCliente),
+        hasCalculation,
+      };
+    }
+
+    // Fallback simples (quando faltar coeficiente/bancos no formato esperado)
+    const saldoTotal = banks.reduce((sum, bank) => sum + Number(bank?.saldoDevedor || 0), 0);
+    const liberadoTotalFromBanks = banks.reduce((sum, bank) => sum + Number(bank?.valorLiberado || 0), 0);
+    const liberadoTotal = liberadoTotalFromBanks > 0 ? liberadoTotalFromBanks : Number(simulation.total_amount || simulation.requested_amount || 0);
+    const totalFinanciado = Number(simulation.total_amount || simulation.requested_amount || liberadoTotal || 0);
+    const custoConsultoria = totalFinanciado * (percentualConsultoria / 100);
+    const liberadoCliente = liberadoTotal - seguroObrigatorio - custoConsultoria;
+
+    return {
+      totalParcela: roundCurrency(totalParcela),
+      saldoTotal: roundCurrency(saldoTotal),
+      liberadoTotal: roundCurrency(liberadoTotal),
+      seguroObrigatorio: roundCurrency(seguroObrigatorio),
+      totalFinanciado: roundCurrency(totalFinanciado),
+      custoConsultoria: roundCurrency(custoConsultoria),
+      liberadoCliente: roundCurrency(liberadoCliente),
+      hasCalculation,
+    };
   }, [simulation]);
+  const liberadoTotal = simulationTotals.liberadoTotal;
 
   useEffect(() => {
     fetchSimulation();
@@ -106,9 +190,8 @@ export default function DetalhesSimulacao() {
     if (!simulation?.id) return;
 
     (async () => {
-      const key = `pendingReupload:v1:${simulation.id}`;
       try {
-        const raw = await SecureStore.getItemAsync(key);
+        const raw = await SecureStore.getItemAsync(pendingReuploadKey(simulation.id));
         if (!raw) {
           setPendingReuploadLocked(false);
           return;
@@ -117,7 +200,7 @@ export default function DetalhesSimulacao() {
         const parsed = JSON.parse(raw);
         const storedSignature = String(parsed?.signature || '');
         if (!storedSignature || storedSignature !== pendencySignature) {
-          await SecureStore.deleteItemAsync(key);
+          await SecureStore.deleteItemAsync(pendingReuploadKey(simulation.id));
           setPendingReuploadLocked(false);
           return;
         }
@@ -138,6 +221,15 @@ export default function DetalhesSimulacao() {
       );
     }
   }, [simulation?.status]);
+
+  useEffect(() => {
+    if (clientApprovedToastShown) return;
+    const st = (simulation?.status || '').toLowerCase();
+    if (st === 'approved_by_client' || st === 'cliente_aprovada' || st === 'simulacao_aprovada') {
+      setShowClientApprovedToast(true);
+      setClientApprovedToastShown(true);
+    }
+  }, [clientApprovedToastShown, simulation?.status]);
 
   const fetchSimulation = async () => {
     try {
@@ -203,10 +295,7 @@ export default function DetalhesSimulacao() {
         try {
           await api.post(`/mobile/simulations/${params.id}/approve-by-client`);
           await fetchSimulation();
-          showSuccess(
-            'Sucesso',
-            'Simulação aprovada e enviada para o setor financeiro. O agente responsável entrará em contato para finalização do contrato.'
-          );
+          setShowClientApprovedToast(true);
         } catch (error: any) {
           const message = error?.response?.data?.detail || 'Não foi possível aprovar a simulação';
           showError('Erro', message);
@@ -312,6 +401,13 @@ export default function DetalhesSimulacao() {
         onHide={() => setShowReuploadToast(false)}
         style={{ top: spacing.lg }}
       />
+      <Toast
+        visible={showClientApprovedToast}
+        tone="success"
+        message="Simulação aprovada. O agente responsável entrará em contato para finalizar o contrato."
+        onHide={() => setShowClientApprovedToast(false)}
+        style={{ top: spacing.lg + 56 }}
+      />
 
       <ScrollView
         style={styles.content}
@@ -345,7 +441,9 @@ export default function DetalhesSimulacao() {
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.highlightLabel, { color: colors.text }]}>Valor liberado para você</Text>
-                <Text style={[styles.highlightValue, { color: colors.accent }]}>{formatCurrency(liberadoTotal)}</Text>
+                <Text style={[styles.highlightValue, { color: colors.accent }]}>
+                  {formatCurrency(simulationTotals.liberadoCliente || liberadoTotal)}
+                </Text>
                 <Text style={[styles.highlightSub, { color: colors.textSecondary }]}>
                   Baseado na simulação enviada
                 </Text>
@@ -473,55 +571,49 @@ export default function DetalhesSimulacao() {
           </View>
         )}
 
-        {showSimulationResult && (
+        {showSimulationResult && simulationTotals.hasCalculation && (
           <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border + '80' }]}>
-            <View style={styles.sectionHeader}>
-              <Ionicons name="calculator" size={20} color={colors.accent} />
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>Dados da Simulação</Text>
+            <View style={styles.sectionHeaderRow}>
+              <View style={styles.sectionHeader}>
+                <Ionicons name="cash-outline" size={20} color={colors.accent} />
+                <Text style={[styles.sectionTitle, { color: colors.text }]}>Resultado da Simulação</Text>
+              </View>
+              <View style={[styles.resultBadge, { backgroundColor: (colors.warning || colors.accent) + '20', borderColor: (colors.warning || colors.accent) + '40' }]}>
+                <Text style={[styles.resultBadgeText, { color: colors.warning || colors.accent }]}>Calculada</Text>
+              </View>
             </View>
+
             <View style={styles.totalsList}>
               <View style={styles.totalRow}>
-                <Text style={[styles.totalLabel, { color: colors.textSecondary }]}>Valor Liberado</Text>
-                <Text style={[styles.totalValue, { color: colors.accent }]}>
-                  {formatCurrency(liberadoTotal)}
+                <Text style={[styles.totalLabel, { color: colors.textSecondary }]}>Valor Parcela Total</Text>
+                <Text style={[styles.totalValue, { color: colors.text }]}>{formatCurrency(simulationTotals.totalParcela)}</Text>
+              </View>
+              <View style={styles.totalRow}>
+                <Text style={[styles.totalLabel, { color: colors.textSecondary }]}>Saldo Devedor Total</Text>
+                <Text style={[styles.totalValue, { color: colors.text }]}>{formatCurrency(simulationTotals.saldoTotal)}</Text>
+              </View>
+              <View style={styles.totalRow}>
+                <Text style={[styles.totalLabel, { color: colors.textSecondary }]}>Valor Liberado Total</Text>
+                <Text style={[styles.totalValue, { color: colors.success || '#22c55e' }]}>{formatCurrency(simulationTotals.liberadoTotal)}</Text>
+              </View>
+              <View style={styles.totalRow}>
+                <Text style={[styles.totalLabel, { color: colors.textSecondary }]}>Seguro Obrigatório Banco</Text>
+                <Text style={[styles.totalValue, { color: colors.text }]}>{formatCurrency(simulationTotals.seguroObrigatorio)}</Text>
+              </View>
+              <View style={styles.totalRow}>
+                <Text style={[styles.totalLabel, { color: colors.textSecondary }]}>Valor Total Financiado</Text>
+                <Text style={[styles.totalValue, { color: colors.text }]}>{formatCurrency(simulationTotals.totalFinanciado)}</Text>
+              </View>
+              <View style={styles.totalRow}>
+                <Text style={[styles.totalLabel, { color: colors.textSecondary }]}>Custo Consultoria</Text>
+                <Text style={[styles.totalValue, { color: colors.text }]}>{formatCurrency(simulationTotals.custoConsultoria)}</Text>
+              </View>
+              <View style={[styles.totalRow, styles.totalRowHighlight, { borderTopColor: colors.border + '50' }]}>
+                <Text style={[styles.totalLabel, { color: colors.success || '#22c55e', fontWeight: '700' }]}>Liberado para o Cliente</Text>
+                <Text style={[styles.totalValue, styles.totalValueHighlight, { color: colors.success || '#22c55e' }]}>
+                  {formatCurrency(simulationTotals.liberadoCliente)}
                 </Text>
               </View>
-              <View style={[styles.divider, { backgroundColor: colors.border + '50' }]} />
-
-              {Array.isArray(simulation.banks_json) && simulation.banks_json.length > 0 && (
-                <>
-                  <View style={styles.dataSection}>
-                    <Text style={[styles.dataLabel, { color: colors.textSecondary }]}>Produtos</Text>
-                    <View style={styles.productsList}>
-                      {simulation.banks_json
-                        .filter((bank: any) => bank.product)
-                        .map((bank: any, index: number) => (
-                          <View key={`product-${index}`} style={[styles.productBadge, { backgroundColor: colors.accent + '15', borderColor: colors.accent + '30' }]}>
-                            <Text style={[styles.productText, { color: colors.accent }]}>{bank.product}</Text>
-                          </View>
-                        ))}
-                      {simulation.banks_json.filter((bank: any) => bank.product).length === 0 && (
-                        <Text style={[styles.emptyDataText, { color: colors.textTertiary }]}>Nenhum produto especificado</Text>
-                      )}
-                    </View>
-                  </View>
-                  <View style={[styles.divider, { backgroundColor: colors.border + '50' }]} />
-
-                  <View style={styles.dataSection}>
-                    <Text style={[styles.dataLabel, { color: colors.textSecondary }]}>Bancos</Text>
-                    <View style={styles.banksList}>
-                      {simulation.banks_json.map((bank: any, index: number) => (
-                        <View key={`bank-${index}`} style={[styles.bankBadge, { borderColor: colors.border }]}>
-                          <Ionicons name="business" size={16} color={colors.text} />
-                          <Text style={[styles.bankBadgeText, { color: colors.text }]}>
-                            {(bank.bank || bank.banco || 'Banco').toString().toUpperCase()}
-                          </Text>
-                        </View>
-                      ))}
-                    </View>
-                  </View>
-                </>
-              )}
             </View>
           </View>
         )}
@@ -842,9 +934,24 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     marginBottom: spacing.md,
   },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   sectionTitle: {
     fontSize: 16,
     fontWeight: '600',
+  },
+  resultBadge: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  resultBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
   },
   sectionSubtitle: {
     fontSize: 14,
@@ -888,6 +995,15 @@ const styles = StyleSheet.create({
   totalValue: {
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  totalRowHighlight: {
+    borderTopWidth: 1,
+    marginTop: spacing.sm,
+    paddingTop: spacing.md,
+  },
+  totalValueHighlight: {
+    fontSize: 22,
+    fontWeight: '800',
   },
   divider: {
     height: 1,
