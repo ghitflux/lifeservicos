@@ -5,12 +5,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/contexts/ThemeContext';
 import { borderRadius, spacing } from '@/constants/theme';
-import { Header, MobileNav, AlertDialog } from '@/components';
+import { Header, MobileNav, AlertDialog, Toast } from '@/components';
 import { formatCurrency } from '@/utils/formatters';
 import { api } from '@/services/api';
 import { useAlert } from '@/hooks/useAlert';
 import { mapSimulationStatus } from '@/utils/status';
 import { useAuth } from '@/hooks/useAuth';
+import * as SecureStore from 'expo-secure-store';
 
 interface Simulation {
   id: string;
@@ -35,17 +36,52 @@ interface Simulation {
 
 export default function DetalhesSimulacao() {
   const router = useRouter();
-  const params = useLocalSearchParams();
+  const params = useLocalSearchParams<{ id?: string; pendingReupload?: string }>();
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const { alert, showError, showSuccess, showConfirm, showDestructive, dismissAlert } = useAlert();
   const { user } = useAuth();
   const [simulation, setSimulation] = useState<Simulation | null>(null);
   const [loading, setLoading] = useState(true);
-  const pendingDocs = useMemo(
-    () => (Array.isArray(simulation?.pending_documents) ? simulation?.pending_documents : []),
-    [simulation?.pending_documents]
-  );
+  const [pendingReuploadLocked, setPendingReuploadLocked] = useState(!!params?.pendingReupload);
+  const [showReuploadToast, setShowReuploadToast] = useState(false);
+  const [reuploadToastShown, setReuploadToastShown] = useState(false);
+  const pendingDocs = useMemo(() => {
+    const raw = Array.isArray((simulation as any)?.pending_documents)
+      ? ((simulation as any)?.pending_documents as any[])
+      : [];
+
+    return raw
+      .map((doc) => {
+        if (!doc || typeof doc !== 'object') return null;
+        const type = String((doc as any).type ?? (doc as any).tipo ?? '').trim();
+        const description = String((doc as any).description ?? (doc as any).descricao ?? '').trim();
+        if (!type && !description) return null;
+        return { type: type || 'Documento solicitado', description: description || undefined };
+      })
+      .filter(Boolean) as Array<{ type: string; description?: string }>;
+  }, [simulation]);
+
+  const analystNotes = useMemo(() => {
+    const raw =
+      (simulation as any)?.analyst_notes
+      ?? (simulation as any)?.analystNotes
+      ?? (simulation as any)?.analyst_message;
+    const value = typeof raw === 'string' ? raw.trim() : '';
+    return value || '';
+  }, [simulation]);
+
+  const pendencySignature = useMemo(() => {
+    return JSON.stringify({
+      analystNotes: analystNotes.trim(),
+      pendingDocs: [...pendingDocs]
+        .map((d) => ({
+          type: String(d?.type || '').trim(),
+          description: String(d?.description || '').trim(),
+        }))
+        .sort((a, b) => (a.type + a.description).localeCompare(b.type + b.description)),
+    });
+  }, [analystNotes, pendingDocs]);
   const liberadoTotal = useMemo(() => {
     if (!simulation) return 0;
     const banks = Array.isArray(simulation.banks_json) ? simulation.banks_json : [];
@@ -58,6 +94,40 @@ export default function DetalhesSimulacao() {
   useEffect(() => {
     fetchSimulation();
   }, []);
+
+  useEffect(() => {
+    if (reuploadToastShown) return;
+    if (!params?.pendingReupload) return;
+    setShowReuploadToast(true);
+    setReuploadToastShown(true);
+  }, [params?.pendingReupload, reuploadToastShown]);
+
+  useEffect(() => {
+    if (!simulation?.id) return;
+
+    (async () => {
+      const key = `pendingReupload:v1:${simulation.id}`;
+      try {
+        const raw = await SecureStore.getItemAsync(key);
+        if (!raw) {
+          setPendingReuploadLocked(false);
+          return;
+        }
+
+        const parsed = JSON.parse(raw);
+        const storedSignature = String(parsed?.signature || '');
+        if (!storedSignature || storedSignature !== pendencySignature) {
+          await SecureStore.deleteItemAsync(key);
+          setPendingReuploadLocked(false);
+          return;
+        }
+
+        setPendingReuploadLocked(true);
+      } catch {
+        setPendingReuploadLocked(false);
+      }
+    })();
+  }, [pendencySignature, simulation?.id]);
 
   // Toast informativo quando contrato está efetivado
   useEffect(() => {
@@ -91,6 +161,15 @@ export default function DetalhesSimulacao() {
       }
 
       setSimulation(data);
+
+      // Debug: Verificar se os campos de pendência estão vindo
+      console.log('[DetalhesSimulacao] Simulation data:', {
+        id: data.id,
+        status: data.status,
+        analysis_status: data.analysis_status,
+        analyst_notes: data.analyst_notes,
+        pending_documents: data.pending_documents,
+      });
     } catch (error: any) {
       console.error('Error fetching simulation:', error);
       const message = error?.response?.data?.detail || 'Não foi possível carregar a simulação';
@@ -124,7 +203,10 @@ export default function DetalhesSimulacao() {
         try {
           await api.post(`/mobile/simulations/${params.id}/approve-by-client`);
           await fetchSimulation();
-          showSuccess('Sucesso', 'Simulação aprovada e enviada ao financeiro.');
+          showSuccess(
+            'Sucesso',
+            'Simulação aprovada e enviada para o setor financeiro. O agente responsável entrará em contato para finalização do contrato.'
+          );
         } catch (error: any) {
           const message = error?.response?.data?.detail || 'Não foi possível aprovar a simulação';
           showError('Erro', message);
@@ -206,9 +288,7 @@ export default function DetalhesSimulacao() {
   const showFinanceActions =
     canManageStatus &&
     ['approved_by_client', 'cliente_aprovada', 'simulacao_aprovada', 'financeiro_pendente'].includes(normalizedStatus);
-  const analysisStatus = (simulation as any)?.analysis_status?.toLowerCase?.();
-  const hasPendingDocs =
-    normalizedStatus === 'pending_docs' || analysisStatus === 'pending_docs' || pendingDocs.length > 0;
+  const hasPendingDocs = normalizedStatus === 'pending_docs';
   const showSimulationResult = ['approved', 'approved_by_client', 'cliente_aprovada', 'simulacao_aprovada', 'financeiro_pendente', 'contrato_efetivado'].includes(
     normalizedStatus
   );
@@ -223,6 +303,14 @@ export default function DetalhesSimulacao() {
         title="Detalhes da Simulação"
         subtitle={`#${simulation.id.substring(0, 8)}`}
         showBackButton
+      />
+
+      <Toast
+        visible={showReuploadToast}
+        tone="success"
+        message="Documento reenviado e agora deve aguardar a análise do nosso time. Logo entraremos em contato."
+        onHide={() => setShowReuploadToast(false)}
+        style={{ top: spacing.lg }}
       />
 
       <ScrollView
@@ -266,54 +354,80 @@ export default function DetalhesSimulacao() {
           </View>
         )}
 
-        <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border + '80' }]}>
-          <View style={styles.sectionHeader}>
-            <Ionicons name="alert-circle" size={20} color={colors.accent} />
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Pendências de documentos</Text>
-          </View>
-          {hasPendingDocs ? (
-            <View style={{ gap: spacing.xs }}>
+        {hasPendingDocs && (
+          <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border + '80' }]}>
+            <View style={styles.sectionHeader}>
+              <Ionicons name="alert-circle" size={20} color={colors.warning || colors.accent} />
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>Pendências de documentos</Text>
+            </View>
+
+            {/* Mensagem do Analista - PRIMEIRO */}
+            {analystNotes && (
+              <View style={[styles.analystNotesCard, { backgroundColor: colors.warning + '15', borderColor: colors.warning + '30' }]}>
+                <View style={styles.analystNotesHeader}>
+                  <Ionicons name="person" size={18} color={colors.warning || colors.accent} />
+                  <Text style={[styles.analystNotesTitle, { color: colors.warning || colors.accent }]}>
+                    Mensagem do Analista:
+                  </Text>
+                </View>
+                <Text style={[styles.analystNotesText, { color: colors.text }]}>
+                  {analystNotes}
+                </Text>
+              </View>
+            )}
+
+            {/* Documentos Solicitados - DEPOIS */}
+            <View style={{ gap: spacing.xs, marginTop: analystNotes ? spacing.md : 0 }}>
               {pendingDocs.length > 0 ? (
-                pendingDocs.map((doc, index) => (
-                  <View key={`${doc.type}-${index}`} style={styles.pendingItem}>
-                    <Ionicons name="document-text" size={18} color={colors.textSecondary} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.pendingLabel, { color: colors.text }]}>
-                        {doc.type || 'Documento solicitado'}
-                      </Text>
-                      {doc.description ? (
-                        <Text style={[styles.pendingDescription, { color: colors.textSecondary }]}>
-                          {doc.description}
+                <>
+                  <Text style={[styles.pendingDocsTitle, { color: colors.textSecondary }]}>
+                    Documentos Solicitados:
+                  </Text>
+                  {pendingDocs.map((doc, index) => (
+                    <View key={`${doc.type}-${index}`} style={styles.pendingItem}>
+                      <Ionicons name="document-text" size={18} color={colors.accent} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.pendingLabel, { color: colors.text }]}>
+                          {doc.type || 'Documento solicitado'}
                         </Text>
-                      ) : null}
+                        {doc.description ? (
+                          <Text style={[styles.pendingDescription, { color: colors.textSecondary }]}>
+                            {doc.description}
+                          </Text>
+                        ) : null}
+                      </View>
                     </View>
-                  </View>
-                ))
+                  ))}
+                </>
               ) : (
                 <Text style={[styles.pendingDescription, { color: colors.textSecondary }]}>
                   Temos uma pendência de documento. Reenvie o contracheque mais recente para continuar.
                 </Text>
               )}
-              {simulation.analyst_notes ? (
-                <Text style={[styles.pendingNote, { color: colors.textSecondary }]}>
-                  Observação do analista: {simulation.analyst_notes}
-                </Text>
-              ) : null}
             </View>
-          ) : (
-            <Text style={[styles.pendingDescription, { color: colors.textSecondary }]}>
-              Nenhuma pendência de documento no momento.
-            </Text>
-          )}
 
-          <Pressable
-            style={[styles.pendingButton, { borderColor: colors.accent + '70', backgroundColor: colors.accent + '12' }]}
-            onPress={() => router.push('/screens/enviar-documento')}
-          >
-            <Ionicons name="cloud-upload" size={18} color={colors.accent} />
-            <Text style={[styles.pendingButtonText, { color: colors.accent }]}>Enviar documento agora</Text>
-          </Pressable>
-        </View>
+            {!pendingReuploadLocked ? (
+              <Pressable
+                style={[styles.pendingButton, { borderColor: colors.accent + '70', backgroundColor: colors.accent + '12' }]}
+                onPress={() => router.push({
+                  pathname: '/screens/enviar-documento',
+                  params: {
+                    pendingDocs: JSON.stringify(pendingDocs),
+                    analystNotes,
+                    simulationId: simulation.id
+                  }
+                })}
+              >
+                <Ionicons name="cloud-upload" size={18} color={colors.accent} />
+                <Text style={[styles.pendingButtonText, { color: colors.accent }]}>Enviar documento agora</Text>
+              </Pressable>
+            ) : (
+              <Text style={[styles.pendingDescription, { color: colors.textSecondary, marginTop: spacing.md }]}>
+                Documento reenviado. Aguarde a análise do nosso time.
+              </Text>
+            )}
+          </View>
+        )}
 
         {/* Card informativo para contrato efetivado */}
         {simulation.status === 'contrato_efetivado' && (
@@ -363,7 +477,7 @@ export default function DetalhesSimulacao() {
           <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border + '80' }]}>
             <View style={styles.sectionHeader}>
               <Ionicons name="calculator" size={20} color={colors.accent} />
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>Detalhes Financeiros</Text>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>Dados da Simulação</Text>
             </View>
             <View style={styles.totalsList}>
               <View style={styles.totalRow}>
@@ -373,40 +487,41 @@ export default function DetalhesSimulacao() {
                 </Text>
               </View>
               <View style={[styles.divider, { backgroundColor: colors.border + '50' }]} />
-              <View style={styles.totalRow}>
-                <Text style={[styles.totalLabel, { color: colors.textSecondary }]}>Valor Solicitado</Text>
-                <Text style={[styles.totalValue, { color: colors.text }]}>
-                  {formatCurrency(simulation.requested_amount)}
-                </Text>
-              </View>
-              <View style={[styles.divider, { backgroundColor: colors.border + '50' }]} />
-              <View style={styles.totalRow}>
-                <Text style={[styles.totalLabel, { color: colors.textSecondary }]}>Valor da Parcela</Text>
-                <Text style={[styles.totalValue, { color: colors.text }]}>
-                  {formatCurrency(simulation.installment_value)}
-                </Text>
-              </View>
-              <View style={[styles.divider, { backgroundColor: colors.border + '50' }]} />
-              <View style={styles.totalRow}>
-                <Text style={[styles.totalLabel, { color: colors.textSecondary }]}>Número de Parcelas</Text>
-                <Text style={[styles.totalValue, { color: colors.text }]}>
-                  {simulation.installments}x
-                </Text>
-              </View>
-              <View style={[styles.divider, { backgroundColor: colors.border + '50' }]} />
-              <View style={styles.totalRow}>
-                <Text style={[styles.totalLabel, { color: colors.textSecondary }]}>Valor Total a Pagar</Text>
-                <Text style={[styles.totalValue, { color: colors.text }]}>
-                  {formatCurrency(simulation.total_amount)}
-                </Text>
-              </View>
-              <View style={[styles.divider, { backgroundColor: colors.border + '50' }]} />
-              <View style={styles.totalRow}>
-                <Text style={[styles.totalLabel, { color: colors.textSecondary }]}>Taxa de Juros (mensal)</Text>
-                <Text style={[styles.totalValue, { color: colors.text }]}>
-                  {simulation.interest_rate.toFixed(2)}%
-                </Text>
-              </View>
+
+              {Array.isArray(simulation.banks_json) && simulation.banks_json.length > 0 && (
+                <>
+                  <View style={styles.dataSection}>
+                    <Text style={[styles.dataLabel, { color: colors.textSecondary }]}>Produtos</Text>
+                    <View style={styles.productsList}>
+                      {simulation.banks_json
+                        .filter((bank: any) => bank.product)
+                        .map((bank: any, index: number) => (
+                          <View key={`product-${index}`} style={[styles.productBadge, { backgroundColor: colors.accent + '15', borderColor: colors.accent + '30' }]}>
+                            <Text style={[styles.productText, { color: colors.accent }]}>{bank.product}</Text>
+                          </View>
+                        ))}
+                      {simulation.banks_json.filter((bank: any) => bank.product).length === 0 && (
+                        <Text style={[styles.emptyDataText, { color: colors.textTertiary }]}>Nenhum produto especificado</Text>
+                      )}
+                    </View>
+                  </View>
+                  <View style={[styles.divider, { backgroundColor: colors.border + '50' }]} />
+
+                  <View style={styles.dataSection}>
+                    <Text style={[styles.dataLabel, { color: colors.textSecondary }]}>Bancos</Text>
+                    <View style={styles.banksList}>
+                      {simulation.banks_json.map((bank: any, index: number) => (
+                        <View key={`bank-${index}`} style={[styles.bankBadge, { borderColor: colors.border }]}>
+                          <Ionicons name="business" size={16} color={colors.text} />
+                          <Text style={[styles.bankBadgeText, { color: colors.text }]}>
+                            {(bank.bank || bank.banco || 'Banco').toString().toUpperCase()}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+                </>
+              )}
             </View>
           </View>
         )}
@@ -674,6 +789,33 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
     lineHeight: 18,
   },
+  analystNotesCard: {
+    padding: spacing.md,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    marginBottom: spacing.sm,
+  },
+  analystNotesHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginBottom: spacing.xs,
+  },
+  analystNotesTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  analystNotesText: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  pendingDocsTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    marginBottom: spacing.xs,
+  },
   pendingButton: {
     marginTop: spacing.md,
     padding: spacing.md,
@@ -750,6 +892,38 @@ const styles = StyleSheet.create({
   divider: {
     height: 1,
     marginVertical: spacing.xs,
+  },
+  dataSection: {
+    paddingVertical: spacing.sm,
+    gap: spacing.sm,
+  },
+  dataLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  productsList: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  productBadge: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+  },
+  productText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  emptyDataText: {
+    fontSize: 13,
+    fontStyle: 'italic',
+  },
+  banksList: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
   },
   infoRow: {
     flexDirection: 'row',
