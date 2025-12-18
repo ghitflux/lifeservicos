@@ -12,7 +12,7 @@ module.exports = {
     userInterfaceStyle: "automatic",
     icon: "./assets/lifeapp.png",
     splash: {
-      image: "./assets/splash.png",
+      image: "./assets/lifeapps.png",
       resizeMode: "contain",
       backgroundColor: "#121212"
     },

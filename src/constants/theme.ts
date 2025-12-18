@@ -1,35 +1,35 @@
 // Theme Colors
 export const darkColors = {
   // Near-black palette (requested #121212)
-  primary: '#1A1A1A',
-  secondary: '#121212',
+  primary: '#6D28D9',
+  secondary: '#1A1A1A',
   success: '#4CAF50',
   warning: '#FFC107',
   error: '#E53E3E',
 
   // Gradient/background colors - near black
-  backgroundGradientStart: '#0B0B0B',
+  backgroundGradientStart: '#121212',
   backgroundGradientEnd: '#121212',
   
   // Dark theme backgrounds
-  background: '#0B0B0B',
+  background: '#121212',
   backgroundSecondary: '#0E0E0E',
-  card: '#121212',
-  cardSecondary: '#161616',
+  card: '#1A1A1A',
+  cardSecondary: '#1F1F1F',
 
   // Dark theme text
   text: '#FFFFFF',
-  textSecondary: '#B0B0B0',
-  textTertiary: '#9CA3AF',
+  textSecondary: '#D1D5DB',
+  textTertiary: '#A1A1AA',
 
   // Dark theme borders and dividers
-  border: '#242424',
-  divider: '#1E1E1E',
-  placeholder: '#9CA3AF',
+  border: '#2A2A2A',
+  divider: '#242424',
+  placeholder: '#A1A1AA',
 
-  // Accent colors (keep subtle/near-black)
-  accent: '#1F1F1F',
-  accentLight: '#2A2A2A',
+  // Accent colors (brand)
+  accent: '#6D28D9',
+  accentLight: '#7C3AED',
 };
 
 export const lightColors = {
