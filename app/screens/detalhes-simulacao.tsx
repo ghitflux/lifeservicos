@@ -565,8 +565,8 @@ export default function DetalhesSimulacao() {
               <Text style={[styles.rejectButtonText, { color: colors.error || '#ef4444' }]}>Reprovar</Text>
             </Pressable>
             <Pressable style={[styles.approveButton, { backgroundColor: colors.accent }]} onPress={handleApproveByClient}>
-              <Ionicons name="checkmark-circle" size={20} color="#fff" />
-              <Text style={[styles.approveButtonText, { color: '#fff' }]}>Aprovar</Text>
+              <Ionicons name="checkmark-circle" size={20} color={colors.background} />
+              <Text style={[styles.approveButtonText, { color: colors.background }]}>Aprovar</Text>
             </Pressable>
           </View>
         )}

@@ -23,6 +23,30 @@ export default function Button({
 }: ButtonProps) {
   const { colors } = useTheme();
 
+  const getContrastTextColor = (backgroundColor: string) => {
+    const raw = (backgroundColor || '').trim();
+    const hex = raw.startsWith('#') ? raw.slice(1) : raw;
+
+    const normalized =
+      hex.length === 3
+        ? hex
+            .split('')
+            .map((c) => c + c)
+            .join('')
+        : hex;
+
+    if (!/^[0-9a-fA-F]{6}$/.test(normalized)) {
+      return '#FFFFFF';
+    }
+
+    const r = parseInt(normalized.slice(0, 2), 16);
+    const g = parseInt(normalized.slice(2, 4), 16);
+    const b = parseInt(normalized.slice(4, 6), 16);
+    const yiq = (r * 299 + g * 587 + b * 114) / 1000;
+
+    return yiq >= 160 ? '#121212' : '#FFFFFF';
+  };
+
   const getButtonStyle = () => {
     switch (variant) {
       case 'secondary':
@@ -39,7 +63,7 @@ export default function Button({
       case 'outline':
         return { color: colors.accent };
       default:
-        return { color: '#FFFFFF' };
+        return { color: getContrastTextColor(getButtonStyle().backgroundColor) };
     }
   };
 
@@ -56,7 +80,9 @@ export default function Button({
       disabled={disabled || loading}
     >
       {loading ? (
-        <ActivityIndicator color={variant === 'outline' ? colors.accent : '#FFFFFF'} />
+        <ActivityIndicator
+          color={variant === 'outline' ? colors.accent : getContrastTextColor(getButtonStyle().backgroundColor)}
+        />
       ) : (
         <Text style={[styles.buttonText, getTextStyle(), textStyle]}>{title}</Text>
       )}

@@ -52,7 +52,7 @@ export function AlertDialog({
       default:
         return {
           backgroundColor: colors.primary,
-          textColor: '#FFFFFF',
+          textColor: colors.background,
         };
     }
   };

@@ -379,11 +379,11 @@ export default function EnviarDocumento() {
               disabled={loading}
             >
               {loading ? (
-                <ActivityIndicator color="#FFFFFF" />
+                <ActivityIndicator color={colors.background} />
               ) : (
                 <>
-                  <Ionicons name="cloud-upload" size={24} color="#FFFFFF" />
-                  <Text style={[styles.sendPhotoButtonText, { color: '#FFFFFF' }]}>
+                  <Ionicons name="cloud-upload" size={24} color={colors.background} />
+                  <Text style={[styles.sendPhotoButtonText, { color: colors.background }]}>
                     Enviar {selectedFiles.length > 1 ? `${selectedFiles.length} documentos` : 'documento'}
                   </Text>
                 </>

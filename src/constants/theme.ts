@@ -1,7 +1,7 @@
 // Theme Colors
 export const darkColors = {
-  // Near-black palette (requested #121212)
-  primary: '#6D28D9',
+  // Dark base with white accents
+  primary: '#FFFFFF',
   secondary: '#1A1A1A',
   success: '#4CAF50',
   warning: '#FFC107',
@@ -28,13 +28,13 @@ export const darkColors = {
   placeholder: '#A1A1AA',
 
   // Accent colors (brand)
-  accent: '#6D28D9',
-  accentLight: '#7C3AED',
+  accent: '#FFFFFF',
+  accentLight: '#FFFFFF',
 };
 
 export const lightColors = {
-  primary: '#3B0951',
-  secondary: '#5856D6',
+  primary: '#111827',
+  secondary: '#1F2937',
   success: '#4CAF50',
   warning: '#FFC107',
   error: '#E53E3E',
@@ -56,8 +56,8 @@ export const lightColors = {
   placeholder: '#9CA3AF',
 
   // Accent colors
-  accent: '#3B0951',
-  accentLight: '#8B4FD9',
+  accent: '#111827',
+  accentLight: '#374151',
 };
 
 export type ThemeMode = "light" | "dark";

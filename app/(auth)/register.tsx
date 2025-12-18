@@ -186,9 +186,9 @@ export default function Register() {
           disabled={loading}
         >
           {loading ? (
-            <ActivityIndicator color="#FFFFFF" />
+            <ActivityIndicator color={colors.background} />
           ) : (
-            <Text style={[styles.buttonText, { color: '#FFFFFF' }]}>Criar Conta</Text>
+            <Text style={[styles.buttonText, { color: colors.background }]}>Criar Conta</Text>
           )}
         </Pressable>
 
