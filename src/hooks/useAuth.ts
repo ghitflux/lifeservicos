@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import * as SecureStore from 'expo-secure-store';
+import { Platform } from 'react-native';
 import { api } from '../services/api';
 
 interface User {
@@ -52,6 +53,16 @@ export function useAuth() {
       // Garantir que temos os dados completos do usuário
       const userResponse = await api.get('/auth/me');
       setUser(userResponse.data);
+
+      // Sincronizar push token após login (primeiro acesso pode não ter conseguido salvar)
+      try {
+        const pushToken = await SecureStore.getItemAsync('expoPushToken');
+        if (pushToken) {
+          await api.post('/mobile/push-token', { token: pushToken, platform: Platform.OS });
+        }
+      } catch {
+        // não bloquear login
+      }
 
       return { success: true };
     } catch (error: any) {

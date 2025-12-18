@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import * as Notifications from 'expo-notifications';
 import { useRouter } from 'expo-router';
 import { Platform } from 'react-native';
+import * as SecureStore from 'expo-secure-store';
 import {
   registerForPushNotificationsAsync,
   setupNotificationListeners,
@@ -62,13 +63,17 @@ export function usePushNotifications() {
 
   const savePushToken = async (token: string) => {
     try {
+      // Persistir para tentar sincronizar após login (primeiro acesso pode dar 401)
+      await SecureStore.setItemAsync('expoPushToken', token);
+
       await api.post('/mobile/push-token', {
         token,
         platform: Platform.OS,
       });
       console.log('Push token salvo:', token);
     } catch (error) {
-      console.error('Erro ao salvar push token:', error);
+      // Pode falhar antes do login (401). Mantém token salvo para sincronizar depois.
+      console.warn('Não foi possível salvar push token agora (será sincronizado após login).');
     }
   };
 
