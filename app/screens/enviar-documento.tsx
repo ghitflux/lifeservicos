@@ -308,7 +308,7 @@ export default function EnviarDocumento() {
                 <Text
                   style={[
                     styles.typeButtonText,
-                    { color: documentType === type ? '#FFFFFF' : colors.textSecondary },
+                    { color: documentType === type ? colors.background : colors.textSecondary },
                   ]}
                 >
                   {type}

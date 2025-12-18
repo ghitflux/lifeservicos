@@ -98,9 +98,23 @@ export default function Login() {
           )}
         </Pressable>
 
-        <Pressable onPress={() => router.push('/(auth)/register')}>
-          <Text style={[styles.link, { color: colors.accent }]}>Não tem conta? Criar conta</Text>
+        <Pressable
+          style={({ pressed }) => [
+            styles.createAccountButton,
+            {
+              backgroundColor: colors.card,
+              borderColor: colors.border,
+              opacity: pressed ? 0.85 : 1,
+            },
+          ]}
+          onPress={() => router.push('/(auth)/register')}
+        >
+          <Ionicons name="person-add-outline" size={18} color={colors.text} />
+          <Text style={[styles.createAccountText, { color: colors.text }]}>Criar conta</Text>
         </Pressable>
+        <Text style={[styles.createAccountHint, { color: colors.textSecondary }]}>
+          Ainda não tem conta? Crie uma agora para solicitar sua simulação.
+        </Text>
       </View>
 
       {alert && (
@@ -181,10 +195,26 @@ const styles = StyleSheet.create({
   buttonText: {
     fontSize: 16,
   },
-  link: {
-    textAlign: 'center',
+  createAccountButton: {
+    marginTop: spacing.lg,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  createAccountText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  createAccountHint: {
     marginTop: spacing.sm,
-    fontSize: 14,
+    textAlign: 'center',
+    fontSize: 12,
+    lineHeight: 16,
   },
 });
 

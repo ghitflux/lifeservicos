@@ -129,21 +129,26 @@ export default function Register() {
           maxLength={15}
         />
 
-        <View style={styles.passwordContainer}>
-          <TextInput
-            style={[styles.passwordInput, { backgroundColor: colors.card, borderColor: colors.border, color: colors.text }]}
-            placeholder="Senha"
-            placeholderTextColor={colors.placeholder}
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry={!showPassword}
-          />
-          <Pressable 
-            style={styles.eyeIcon}
-            onPress={() => setShowPassword(!showPassword)}
-          >
-            <Ionicons name={showPassword ? "eye-off" : "eye"} size={20} color={colors.textSecondary} />
-          </Pressable>
+        <View style={styles.fieldGroup}>
+          <View style={styles.passwordContainer}>
+            <TextInput
+              style={[styles.passwordInput, { backgroundColor: colors.card, borderColor: colors.border, color: colors.text }]}
+              placeholder="Senha"
+              placeholderTextColor={colors.placeholder}
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry={!showPassword}
+            />
+            <Pressable 
+              style={styles.eyeIcon}
+              onPress={() => setShowPassword(!showPassword)}
+            >
+              <Ionicons name={showPassword ? "eye-off" : "eye"} size={20} color={colors.textSecondary} />
+            </Pressable>
+          </View>
+          <Text style={[styles.passwordHint, { color: colors.textTertiary }]}>
+            Use no mínimo 6 caracteres. Recomendamos combinar letras e números.
+          </Text>
         </View>
 
         <View style={styles.passwordContainer}>
@@ -238,9 +243,11 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     fontSize: 16,
   },
+  fieldGroup: {
+    gap: spacing.xs,
+  },
   passwordContainer: {
     position: 'relative',
-    marginBottom: spacing.md,
   },
   passwordInput: {
     borderWidth: 1,
@@ -248,6 +255,10 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     paddingRight: 48,
     fontSize: 16,
+  },
+  passwordHint: {
+    fontSize: 12,
+    lineHeight: 16,
   },
   eyeIcon: {
     position: 'absolute',

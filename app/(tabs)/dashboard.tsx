@@ -1,6 +1,6 @@
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, RefreshControl, Animated, Easing } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -83,6 +83,32 @@ export default function Dashboard() {
     router.push('/screens/ajuda-suporte');
   };
 
+  const bannerMessage = 'Você pode solicitar uma simulação todo mês enviando apenas o contracheque.';
+  const bannerTranslateX = useRef(new Animated.Value(0)).current;
+  const [bannerItemWidth, setBannerItemWidth] = useState(0);
+
+  useEffect(() => {
+    if (!bannerItemWidth) return;
+
+    const gap = spacing.lg;
+    const distance = bannerItemWidth + gap;
+    const durationMs = Math.max(9000, Math.round(distance * 26)); // ~26ms por px
+
+    bannerTranslateX.setValue(0);
+    const animation = Animated.loop(
+      Animated.timing(bannerTranslateX, {
+        toValue: -distance,
+        duration: durationMs,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      }),
+      { resetBeforeIteration: true }
+    );
+
+    animation.start();
+    return () => animation.stop();
+  }, [bannerItemWidth, bannerTranslateX]);
+
   const getToneColor = (tone: string) => {
     if (tone === 'success') return colors.success || '#22c55e';
     if (tone === 'warning') return colors.warning || '#f59e0b';
@@ -132,12 +158,35 @@ export default function Dashboard() {
             <Text style={[styles.prominentSubtitle, { color: 'rgba(255, 255, 255, 0.95)' }]}>
               Envie foto ou documento do seu contracheque para fazermos sua simulação
             </Text>
-            <View style={[styles.prominentButtonContainer, { backgroundColor: 'rgba(255, 255, 255, 0.2)', paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: borderRadius.md, marginTop: spacing.md }]}>
-              <Text style={[styles.prominentButtonText, { color: '#ffffff' }]}>Enviar contracheque</Text>
-              <Ionicons name="arrow-forward" size={18} color="#ffffff" />
+            <View style={[styles.prominentButtonContainer, { backgroundColor: '#ffffff', paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: borderRadius.md, marginTop: spacing.md }]}>
+              <Text style={[styles.prominentButtonText, { color: '#121212' }]}>Enviar contracheque</Text>
+              <Ionicons name="arrow-forward" size={18} color="#121212" />
             </View>
           </View>
         </Pressable>
+      </View>
+
+      <View style={[styles.section, { paddingTop: 0 }]}>
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>Avisos</Text>
+        <View style={[styles.bannerViewport, { borderColor: colors.border, backgroundColor: colors.card }]}>
+          <Animated.View style={[styles.bannerTrack, { transform: [{ translateX: bannerTranslateX }] }]}>
+            <View
+              onLayout={(e) => {
+                const w = e.nativeEvent.layout.width;
+                if (w && w !== bannerItemWidth) setBannerItemWidth(w);
+              }}
+              style={[styles.bannerItem, { borderColor: colors.border, backgroundColor: colors.cardSecondary }]}
+            >
+              <Ionicons name="information-circle-outline" size={18} color={colors.text} />
+              <Text style={[styles.bannerText, { color: colors.textSecondary }]}>{bannerMessage}</Text>
+            </View>
+            <View style={{ width: spacing.lg }} />
+            <View style={[styles.bannerItem, { borderColor: colors.border, backgroundColor: colors.cardSecondary }]}>
+              <Ionicons name="information-circle-outline" size={18} color={colors.text} />
+              <Text style={[styles.bannerText, { color: colors.textSecondary }]}>{bannerMessage}</Text>
+            </View>
+          </Animated.View>
+        </View>
       </View>
 
       {dashboardData.latestSimulation && (
@@ -343,6 +392,29 @@ const styles = StyleSheet.create({
   prominentButtonText: {
     fontSize: 16,
     fontWeight: '700',
+  },
+  bannerViewport: {
+    borderWidth: 1,
+    borderRadius: borderRadius.lg,
+    paddingVertical: spacing.sm,
+    overflow: 'hidden',
+  },
+  bannerTrack: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  bannerItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    borderWidth: 1,
+    borderRadius: borderRadius.lg,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  bannerText: {
+    fontSize: 12,
+    lineHeight: 16,
   },
   statusCard: {
     flexDirection: 'row',
