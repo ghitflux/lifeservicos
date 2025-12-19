@@ -90,10 +90,12 @@ export default function EnviarDocumento() {
       const isPendingReuploadContext = !!simulationId && (pendingDocs.length > 0 || !!analystNotes.trim());
       let successCount = 0;
       let failCount = 0;
+      let lastErrorMessage: string | null = null;
 
       for (const selectedFile of selectedFiles) {
         if (!selectedFile.uri && !selectedFile.fileCopyUri) {
           failCount++;
+          lastErrorMessage = 'Arquivo inválido (sem URI)';
           continue;
         }
 
@@ -136,6 +138,13 @@ export default function EnviarDocumento() {
           }
         } catch (error) {
           console.error('[Upload] Error uploading file:', error);
+          const status = (error as any)?.response?.status;
+          const detail =
+            (error as any)?.response?.data?.detail
+            || (typeof (error as any)?.response?.data === 'string' ? (error as any)?.response?.data : null)
+            || (error as any)?.message
+            || 'Erro ao enviar documento';
+          lastErrorMessage = status ? `HTTP ${status}: ${String(detail)}` : String(detail);
           failCount++;
         }
       }
@@ -176,7 +185,12 @@ export default function EnviarDocumento() {
         setSelectedFiles([]);
         setDocumentType('Contracheque');
       } else {
-        showError('Erro', 'Não foi possível enviar nenhum documento');
+        showError(
+          'Erro',
+          lastErrorMessage
+            ? `Não foi possível enviar nenhum documento. ${lastErrorMessage}`
+            : 'Não foi possível enviar nenhum documento'
+        );
       }
     } catch (error: any) {
       console.error('[Upload] Error:', error);

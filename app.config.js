@@ -1,11 +1,11 @@
 const apiBaseUrl =
   process.env.EXPO_PUBLIC_API_URL
   || process.env.API_URL
-  || "http://0.0.0.0:8000"; // API do life-system (ajuste EXPO_PUBLIC_API_URL para o IP acessivel)
+  || "https://api.lifeservicos.com"; // API de produção (ajuste EXPO_PUBLIC_API_URL/API_URL para dev)
 
 module.exports = {
   expo: {
-    name: "App Life Digital",
+    name: "Digital",
     slug: "applifedigital",
     version: "1.0.0",
     orientation: "portrait",
@@ -27,6 +27,7 @@ module.exports = {
       }
     },
     android: {
+      icon: "./assets/lifeapp.png",
       adaptiveIcon: {
         foregroundImage: "./assets/lifeapp.png",
         backgroundColor: "#121212"
@@ -35,6 +36,7 @@ module.exports = {
       permissions: [
         "CAMERA",
         "RECEIVE_BOOT_COMPLETED",
+        "POST_NOTIFICATIONS",
         "VIBRATE",
         "USE_FINGERPRINT"
       ]

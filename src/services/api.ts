@@ -43,7 +43,7 @@ const getApiUrl = () => {
   }
 
   // Fallback para produção quando nada foi configurado
-  return 'http://0.0.0.0:8000';
+  return 'https://api.lifeservicos.com';
 };
 
 const API_URL = getApiUrl();

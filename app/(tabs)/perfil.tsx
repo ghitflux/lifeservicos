@@ -9,6 +9,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useAlert } from '@/hooks/useAlert';
 import { api } from '@/services/api';
 import { useEffect, useState } from 'react';
+import { clearCredentials } from '@/utils/credentials';
 
 export default function Perfil() {
   const router = useRouter();
@@ -73,6 +74,7 @@ export default function Perfil() {
       'Ao confirmar, seus dados de acesso serão removidos deste dispositivo e você retornará para a tela de login. Seus dados no sistema web não serão removidos.',
       async () => {
         try {
+          await clearCredentials();
           await logout();
           router.replace({
             pathname: '/(auth)/login',

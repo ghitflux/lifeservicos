@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 import { api } from '../services/api';
+import { saveCredentials } from '../utils/credentials';
 
 interface User {
   id: string | number;
@@ -54,6 +55,12 @@ export function useAuth() {
       const userResponse = await api.get('/auth/me');
       setUser(userResponse.data);
 
+      try {
+        await saveCredentials(email, password);
+      } catch {
+        // não bloquear login
+      }
+
       // Sincronizar push token após login (primeiro acesso pode não ter conseguido salvar)
       try {
         const pushToken = await SecureStore.getItemAsync('expoPushToken');
@@ -88,6 +95,11 @@ export function useAuth() {
   }) => {
     try {
       await api.post('/mobile/register', data);
+      try {
+        await saveCredentials(data.email, data.password);
+      } catch {
+        // não bloquear cadastro
+      }
       return { success: true };
     } catch (error: any) {
       let message = 'Erro ao criar conta';

@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { AlertDialog } from '@/components';
 import { useAuth } from '@/hooks/useAuth';
 import { useAlert } from '@/hooks/useAlert';
+import { loadCredentials } from '@/utils/credentials';
 
 const LifeAppLogo = require('../../assets/lifeapp.png');
 
@@ -29,6 +30,20 @@ export default function Login() {
     showSuccess('Conta excluída', 'Sua conta foi excluída com sucesso.');
     setAccountDeletedShown(true);
   }, [accountDeletedShown, params?.accountDeleted, showSuccess]);
+
+  useEffect(() => {
+    let mounted = true;
+    const loadSaved = async () => {
+      const saved = await loadCredentials();
+      if (!saved || !mounted) return;
+      setEmail((prev) => prev || saved.email);
+      setPassword((prev) => prev || saved.password);
+    };
+    loadSaved();
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const handleLogin = async () => {
     if (!email || !password) {

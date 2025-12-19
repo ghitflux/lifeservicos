@@ -1,18 +1,20 @@
-# Instruções para Build do APK - App Life Digital
+# Instruções para Build do APK - Digital
 
 ## Status da Configuração
 
 ### ✅ Configurações Validadas
 
 1. **Backend API (life-system)**: Configurado e rodando corretamente
-   - URL: definida via `EXPO_PUBLIC_API_URL` (ex.: `http://SEU_IP:8000`)
+   - Produção: `https://api.lifeservicos.com`
    - Status: ✅ Acessível
    - Endpoints: Validados e funcionando
 
-2. **Variáveis de Ambiente** (`.env`):
-   - `EXPO_PUBLIC_API_URL="http://SEU_IP:8000"`
-   - `API_URL="http://SEU_IP:8000"`
-   - Status: ✅ Atualizado com IP correto
+2. **Variáveis de Ambiente** (`.env` / EAS):
+   - Padrão (produção): `https://api.lifeservicos.com`
+   - Para desenvolvimento (API local/rede), defina:
+     - `EXPO_PUBLIC_API_URL="http://SEU_IP:8000"`
+     - `API_URL="http://SEU_IP:8000"`
+   - EAS Build: perfis em `eas.json` já apontam para produção
 
 3. **Android SDK**:
    - Localização: `C:\Users\helciovenancio\AppData\Local\Android\Sdk`
@@ -74,7 +76,7 @@ A sintaxe do nome do arquivo, do nome do diretório ou do rótulo do volume est�
 
 3. **Criar build APK**:
    ```bash
-   npx eas-cli build --platform android --profile preview
+   npx eas-cli build --platform android --profile apk
    ```
 
 4. **Aguardar build na nuvem** (10-15 minutos)
@@ -147,17 +149,21 @@ O app mobile está configurado para se conectar aos seguintes endpoints do backe
 
 Antes de instalar o APK no dispositivo, verifique:
 
-1. **Backend está rodando** (API do life-system):
+1. **Backend está acessível** (API do life-system):
    ```bash
-   curl http://SEU_IP:8000/docs
+   # Produção
+   curl https://api.lifeservicos.com/openapi.json
+   #
+   # Desenvolvimento (API local/rede)
+   curl http://SEU_IP:8000/openapi.json
    ```
 
-2. **Dispositivo está na mesma rede**:
+2. **(Somente dev local)** Dispositivo está na mesma rede:
    - Celular conectado ao mesmo Wi-Fi que o computador
    - IP configurado em `EXPO_PUBLIC_API_URL` deve ser acessível pelo celular
 
-3. **Testar no navegador do celular**:
-   - Abrir: `http://SEU_IP:8000/docs`
+3. **(Somente dev local)** Testar no navegador do celular:
+   - Abrir: `http://SEU_IP:8000/openapi.json`
    - Se não funcionar, o dispositivo não consegue acessar o backend
 
 ### Alterando o IP do Backend
@@ -185,11 +191,10 @@ Depois, refaça o build do APK.
 
 ### App não conecta ao backend
 
-1. Verificar se backend está rodando (`http://localhost:8000/docs` no PC)
-2. Verificar se celular está na mesma rede Wi-Fi
-3. Testar URL no navegador do celular: `http://SEU_IP:8000/docs`
-4. Se não funcionar, obter IP correto do PC: `ipconfig` no cmd
-5. Atualizar `.env` com IP correto e refazer build
+1. Verificar a API de produção: `https://api.lifeservicos.com/openapi.json`
+2. Se estiver usando API local, verificar no PC: `http://localhost:8000/openapi.json`
+3. (Dev local) Verificar se celular está na mesma rede Wi-Fi e testar: `http://SEU_IP:8000/openapi.json`
+4. Se não funcionar, obter IP correto do PC: `ipconfig` no cmd e atualizar `.env`
 
 ### App fecha ao abrir
 
@@ -220,11 +225,11 @@ life-mobile/
 
 ## ✅ Próximos Passos Recomendados
 
-1. **Usar Android Studio** (Opção 1) - Mais confiável
-2. Verificar se APK é gerado corretamente
-3. Transferir APK para celular via cabo USB ou compartilhamento
-4. Instalar e testar app
-5. Verificar conexão com backend (`http://SEU_IP:8000`)
+1. **Usar EAS Build** (Opção 2): `npx eas-cli build --platform android --profile apk`
+2. Verificar se o APK foi gerado corretamente e fazer download
+3. Transferir APK para o celular e instalar
+4. Testar login/fluxos do app
+5. Verificar a API: `https://api.lifeservicos.com/openapi.json` (produção)
 
 **Se precisar de ajuda**, os logs do Gradle estão disponíveis em:
 ```
@@ -234,5 +239,5 @@ D:\apps\lifeservicos\life-mobile\android\build\reports\problems\problems-report.
 ---
 
 **Data de configuração**: 2025-12-09
-**IP do backend**: definido em `EXPO_PUBLIC_API_URL`
+**Base da API**: produção por padrão (`https://api.lifeservicos.com`), dev via `EXPO_PUBLIC_API_URL`
 **Versões testadas**: Node 22.16.0, Expo 54.0.27, React Native 0.81.5

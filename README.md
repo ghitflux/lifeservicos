@@ -5,16 +5,26 @@ Aplicativo mobile (Android/iOS) para simulação de crédito. Este app consome e
 ## Pré-requisitos
 - Node.js 18+
 - Android Studio (Android) e/ou Xcode (iOS, macOS)
-- API do `life-system` rodando e acessível pelo dispositivo
+- API do `life-system` (produção: `https://api.lifeservicos.com`)
 
 ## Rodar o app
 ```bash
 npm install
 
-# aponte para a API do life-system (IP acessível pelo celular/emulador)
+# Por padrão o app usa a API de produção:
+# https://api.lifeservicos.com
+#
+# Para desenvolvimento (API local/rede), sobrescreva:
 export EXPO_PUBLIC_API_URL="http://SEU_IP:8000"
 
 npm start
+```
+
+## Build APK (EAS)
+```bash
+cd life-mobile
+npx eas-cli login
+npx eas-cli build --platform android --profile apk
 ```
 
 ## Endpoints consumidos (life-system)
@@ -35,4 +45,3 @@ life-mobile/
 ├── assets/
 └── app.config.js       # permissões/plugins Expo
 ```
-
