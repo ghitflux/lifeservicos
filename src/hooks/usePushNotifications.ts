@@ -8,6 +8,7 @@ import {
   setupNotificationListeners,
 } from '@/services/pushNotifications';
 import { api } from '@/services/api';
+import { useNotificationsContext } from '@/contexts/NotificationsContext';
 
 export function usePushNotifications() {
   const [expoPushToken, setExpoPushToken] = useState<string | null>(null);
@@ -15,6 +16,7 @@ export function usePushNotifications() {
   const notificationListener = useRef<any>();
   const responseListener = useRef<any>();
   const router = useRouter();
+  const { refreshUnreadCount } = useNotificationsContext();
 
   useEffect(() => {
     // Registrar para push notifications
@@ -30,10 +32,13 @@ export function usePushNotifications() {
         console.error('Erro ao registrar push notifications:', error);
       });
 
+    refreshUnreadCount();
+
     // Configurar listeners
     const listeners = setupNotificationListeners(
       (receivedNotification) => {
         setNotification(receivedNotification);
+        refreshUnreadCount();
       },
       (response) => {
         // Quando o usuário clica na notificação
@@ -50,6 +55,7 @@ export function usePushNotifications() {
         } else {
           router.push('/(tabs)/notificacoes');
         }
+        refreshUnreadCount();
       }
     );
 
@@ -59,7 +65,7 @@ export function usePushNotifications() {
     return () => {
       listeners.remove();
     };
-  }, []);
+  }, [refreshUnreadCount, router]);
 
   const savePushToken = async (token: string) => {
     try {

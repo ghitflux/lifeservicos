@@ -7,6 +7,8 @@ import Constants from 'expo-constants';
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
     shouldPlaySound: true,
     shouldSetBadge: true,
   }),
@@ -17,6 +19,18 @@ export interface PushNotificationToken {
   deviceId: string;
 }
 
+function getExpoProjectId(): string | undefined {
+  const configProjectId =
+    Constants.easConfig?.projectId
+    || Constants.expoConfig?.extra?.eas?.projectId
+    || Constants.expoConfig?.projectId
+    || (Constants.manifest as any)?.extra?.eas?.projectId
+    || (Constants.manifest2 as any)?.extra?.eas?.projectId
+    || (Constants.expoGoConfig as any)?.extra?.eas?.projectId;
+
+  return configProjectId || undefined;
+}
+
 /**
  * Registra o dispositivo para receber push notifications
  */
@@ -24,6 +38,15 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
   let token: string | null = null;
 
   if (Device.isDevice) {
+    if (Platform.OS === 'android') {
+      await Notifications.setNotificationChannelAsync('default', {
+        name: 'default',
+        importance: Notifications.AndroidImportance.MAX,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: '#FF231F7C',
+      });
+    }
+
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
     let finalStatus = existingStatus;
 
@@ -39,19 +62,18 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
 
     try {
       // Obter o projectId do app.json
-      const projectId = Constants.expoConfig?.extra?.eas?.projectId || Constants.expoConfig?.projectId;
+      const projectId = getExpoProjectId();
 
       if (!projectId) {
         console.warn('⚠️ Push notifications: ProjectId não configurado. Push notifications remotas não funcionarão.');
         console.warn('💡 Notificações locais e in-app continuam funcionando normalmente.');
-        return null;
       }
 
-      token = (
-        await Notifications.getExpoPushTokenAsync({
-          projectId,
-        })
-      ).data;
+      const response = projectId
+        ? await Notifications.getExpoPushTokenAsync({ projectId })
+        : await Notifications.getExpoPushTokenAsync();
+
+      token = response.data;
 
       console.log('✅ Push token obtido com sucesso:', token);
     } catch (error: any) {
@@ -61,15 +83,6 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
       } else {
         console.error('❌ Erro ao obter push token:', error);
       }
-    }
-
-    if (Platform.OS === 'android') {
-      Notifications.setNotificationChannelAsync('default', {
-        name: 'default',
-        importance: Notifications.AndroidImportance.MAX,
-        vibrationPattern: [0, 250, 250, 250],
-        lightColor: '#FF231F7C',
-      });
     }
   } else {
     console.log('Push notifications só funcionam em dispositivos físicos');

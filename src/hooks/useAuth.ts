@@ -3,6 +3,7 @@ import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 import { api } from '../services/api';
 import { saveCredentials } from '../utils/credentials';
+import { useNotificationsContext } from '@/contexts/NotificationsContext';
 
 interface User {
   id: string | number;
@@ -16,6 +17,7 @@ interface User {
 export function useAuth() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const { refreshUnreadCount, setUnreadCount } = useNotificationsContext();
 
   useEffect(() => {
     loadUser();
@@ -71,6 +73,8 @@ export function useAuth() {
         // não bloquear login
       }
 
+      refreshUnreadCount();
+
       return { success: true };
     } catch (error: any) {
       let message = 'Erro ao fazer login';
@@ -119,6 +123,7 @@ export function useAuth() {
       await api.post('/auth/logout').catch(() => null);
       await SecureStore.deleteItemAsync('authToken');
       setUser(null);
+      setUnreadCount(0);
     } catch (error) {
       console.error('Logout error:', error);
     }

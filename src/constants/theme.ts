@@ -27,9 +27,9 @@ export const darkColors = {
   divider: '#242424',
   placeholder: '#A1A1AA',
 
-  // Accent colors (brand)
-  accent: '#FFFFFF',
-  accentLight: '#FFFFFF',
+  // Accent colors (brand) - Azul claro do logo Life Digital
+  accent: '#00D4FF',
+  accentLight: '#33DDFF',
 };
 
 export const lightColors = {
@@ -55,9 +55,9 @@ export const lightColors = {
   divider: '#E5E7EB',
   placeholder: '#9CA3AF',
 
-  // Accent colors
-  accent: '#111827',
-  accentLight: '#374151',
+  // Accent colors (brand) - Azul claro do logo Life Digital
+  accent: '#00D4FF',
+  accentLight: '#33DDFF',
 };
 
 export type ThemeMode = "light" | "dark";

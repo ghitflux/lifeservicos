@@ -1,4 +1,4 @@
-import { View, Text, TextInput, StyleSheet, Pressable, ActivityIndicator, Image } from 'react-native';
+import { View, Text, TextInput, StyleSheet, Pressable, ActivityIndicator, ImageBackground, Dimensions } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -9,7 +9,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useAlert } from '@/hooks/useAlert';
 import { loadCredentials } from '@/utils/credentials';
 
-const LifeAppLogo = require('../../assets/lifeapp.png');
+const LoginBackground = require('../../assets/login-bg.png');
 
 export default function Login() {
   const router = useRouter();
@@ -63,53 +63,56 @@ export default function Login() {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={styles.iconContainer}>
-        <Image source={LifeAppLogo} style={styles.logo} resizeMode="contain" />
-      </View>
-      
-      <Text style={[styles.title, { color: colors.text }]}>Bem-vindo de volta</Text>
-      <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Entre com sua conta para continuar</Text>
-
-      <View style={styles.form}>
-        <Text style={[styles.label, { color: colors.text }]}>Email</Text>
+    <View style={styles.container}>
+      <ImageBackground
+        source={LoginBackground}
+        style={styles.backgroundImage}
+        resizeMode="cover"
+      >
+      <View style={styles.content}>
+        <View style={styles.form}>
         <TextInput
-          style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, color: colors.text }]}
-          placeholder="seu@email.com"
-          placeholderTextColor={colors.placeholder}
+          style={[styles.input, { color: '#FFFFFF' }]}
+          placeholder="E-mail"
+          placeholderTextColor="rgba(255, 255, 255, 0.6)"
           value={email}
           onChangeText={setEmail}
           keyboardType="email-address"
           autoCapitalize="none"
         />
 
-        <Text style={[styles.label, { color: colors.text }]}>Senha</Text>
         <View style={styles.passwordContainer}>
           <TextInput
-            style={[styles.passwordInput, { backgroundColor: colors.card, borderColor: colors.border, color: colors.text }]}
-            placeholder="••••••••"
-            placeholderTextColor={colors.placeholder}
+            style={[styles.passwordInput, { color: '#FFFFFF' }]}
+            placeholder="Senha"
+            placeholderTextColor="rgba(255, 255, 255, 0.6)"
             value={password}
             onChangeText={setPassword}
             secureTextEntry={!showPassword}
           />
-          <Pressable 
-            style={styles.eyeIcon}
+          <Pressable
+            style={styles.eyeIconButton}
             onPress={() => setShowPassword(!showPassword)}
           >
-            <Ionicons name={showPassword ? "eye-off" : "eye"} size={20} color={colors.textSecondary} />
+            <View style={styles.eyeIconCircle}>
+              <Ionicons
+                name={showPassword ? "eye-off-outline" : "eye-outline"}
+                size={20}
+                color="#00D4FF"
+              />
+            </View>
           </Pressable>
         </View>
 
         <Pressable
-          style={[styles.button, { backgroundColor: colors.primary, opacity: loading ? 0.7 : 1 }]}
+          style={[styles.button, { backgroundColor: colors.accent, opacity: loading ? 0.7 : 1 }]}
           onPress={handleLogin}
           disabled={loading}
         >
           {loading ? (
-            <ActivityIndicator color={colors.background} />
+            <ActivityIndicator color="#000000" />
           ) : (
-            <Text style={[styles.buttonText, { color: colors.background }]}>Entrar</Text>
+            <Text style={[styles.buttonText, { color: '#000000' }]}>Entrar</Text>
           )}
         </Pressable>
 
@@ -117,21 +120,21 @@ export default function Login() {
           style={({ pressed }) => [
             styles.createAccountButton,
             {
-              backgroundColor: colors.card,
-              borderColor: colors.border,
               opacity: pressed ? 0.85 : 1,
             },
           ]}
           onPress={() => router.push('/(auth)/register')}
         >
-          <Ionicons name="person-add-outline" size={18} color={colors.text} />
-          <Text style={[styles.createAccountText, { color: colors.text }]}>Criar conta</Text>
+          <Ionicons name="person-add-outline" size={15} color="#FFFFFF" />
+          <Text style={styles.createAccountText}>Criar conta</Text>
         </Pressable>
-        <Text style={[styles.createAccountHint, { color: colors.textSecondary }]}>
+        <Text style={styles.createAccountHint}>
           Ainda não tem conta? Crie uma agora para solicitar sua simulação.
         </Text>
+        </View>
       </View>
 
+      </ImageBackground>
       {alert && (
         <AlertDialog
           visible={!!alert}
@@ -149,41 +152,36 @@ export default function Login() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: spacing.lg,
-    justifyContent: 'center',
+    backgroundColor: '#0a0a0a',
   },
-  iconContainer: {
-    alignItems: 'center',
-    marginBottom: spacing.xl,
+  backgroundImage: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: '80%',
   },
-  logo: {
-    width: 112,
-    height: 112,
-    borderRadius: 24,
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: '700',
-    marginBottom: spacing.sm,
-    textAlign: 'center',
-  },
-  subtitle: {
-    fontSize: 16,
-    marginBottom: spacing.xl,
-    textAlign: 'center',
+  content: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    paddingHorizontal: spacing.lg,
+    paddingBottom: '15%',
   },
   form: {
     gap: spacing.md,
-  },
-  label: {
-    fontSize: 14,
-    marginBottom: spacing.sm,
   },
   input: {
     borderWidth: 1,
     borderRadius: borderRadius.md,
     padding: spacing.md,
-    fontSize: 16,
+    fontSize: 15,
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+    borderColor: 'rgba(255, 255, 255, 0.35)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 5,
   },
   passwordContainer: {
     position: 'relative',
@@ -192,27 +190,50 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: borderRadius.md,
     padding: spacing.md,
-    paddingRight: 48,
-    fontSize: 16,
+    paddingRight: 56,
+    fontSize: 15,
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+    borderColor: 'rgba(255, 255, 255, 0.35)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 5,
   },
-  eyeIcon: {
+  eyeIconButton: {
     position: 'absolute',
-    right: spacing.md,
+    right: spacing.sm,
     top: '50%',
-    transform: [{ translateY: -10 }],
+    transform: [{ translateY: -20 }],
+  },
+  eyeIconCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0, 212, 255, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 212, 255, 0.3)',
   },
   button: {
     padding: spacing.md,
     borderRadius: borderRadius.md,
     alignItems: 'center',
     marginTop: spacing.sm,
+    shadowColor: '#00D4FF',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 8,
   },
   buttonText: {
     fontSize: 16,
+    fontWeight: '700',
   },
   createAccountButton: {
-    marginTop: spacing.lg,
-    paddingVertical: spacing.md,
+    marginTop: spacing.md,
+    paddingVertical: spacing.sm + spacing.xs,
     paddingHorizontal: spacing.md,
     borderRadius: borderRadius.md,
     alignItems: 'center',
@@ -220,16 +241,28 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexDirection: 'row',
     gap: spacing.sm,
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+    borderColor: 'rgba(255, 255, 255, 0.35)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 5,
   },
   createAccountText: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
+    color: '#FFFFFF',
   },
   createAccountHint: {
     marginTop: spacing.sm,
     textAlign: 'center',
-    fontSize: 12,
-    lineHeight: 16,
+    fontSize: 11,
+    lineHeight: 15,
+    color: 'rgba(255, 255, 255, 0.85)',
+    textShadowColor: 'rgba(0, 0, 0, 0.8)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
 });
 

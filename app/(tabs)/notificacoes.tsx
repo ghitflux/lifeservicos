@@ -8,6 +8,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { borderRadius, spacing } from '@/constants/theme';
 import { Header, MobileNav } from '@/components';
 import { api } from '@/services/api';
+import { useNotificationsContext } from '@/contexts/NotificationsContext';
 
 interface Notification {
   id: string;
@@ -26,6 +27,7 @@ export default function Notificacoes() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const { setUnreadCount } = useNotificationsContext();
 
   useEffect(() => {
     fetchNotifications();
@@ -55,6 +57,10 @@ export default function Notificacoes() {
   };
 
   const unreadCount = notifications.filter((n) => !n.is_read).length;
+
+  useEffect(() => {
+    setUnreadCount(unreadCount);
+  }, [setUnreadCount, unreadCount]);
 
   const markAsRead = async (id: string) => {
     try {

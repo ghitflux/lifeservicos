@@ -3,6 +3,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter, usePathname } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/contexts/ThemeContext';
+import { useNotificationsContext } from '@/contexts/NotificationsContext';
 import { spacing } from '@/constants/theme';
 
 interface NavItem {
@@ -24,6 +25,7 @@ export default function MobileNav() {
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
+  const { unreadCount } = useNotificationsContext();
 
   const isActive = (route: string) => {
     // Normalize routes for comparison
@@ -51,6 +53,8 @@ export default function MobileNav() {
     <View style={[styles.container, { backgroundColor: colors.card, borderTopColor: colors.border, paddingBottom: Math.max(insets.bottom, 8) }]}>
       {navItems.map((item) => {
         const active = isActive(item.route);
+        const showBadge = item.route === '/(tabs)/notificacoes' && unreadCount > 0;
+        const badgeText = unreadCount > 99 ? '99+' : String(unreadCount);
         return (
           <Pressable
             key={item.name}
@@ -60,11 +64,20 @@ export default function MobileNav() {
             {active && (
               <View style={[styles.activeIndicator, { backgroundColor: colors.accent }]} />
             )}
-            <Ionicons
-              name={item.icon}
-              size={24}
-              color={active ? colors.accent : colors.textTertiary}
-            />
+            <View style={styles.iconWrapper}>
+              <Ionicons
+                name={item.icon}
+                size={24}
+                color={active ? colors.accent : colors.textTertiary}
+              />
+              {showBadge && (
+                <View style={[styles.badge, { backgroundColor: colors.error }]}>
+                  <Text style={[styles.badgeText, { color: colors.background }]}>
+                    {badgeText}
+                  </Text>
+                </View>
+              )}
+            </View>
             <Text
               style={[
                 styles.navLabel,
@@ -97,12 +110,32 @@ const styles = StyleSheet.create({
     gap: 4,
     position: 'relative',
   },
+  iconWrapper: {
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   activeIndicator: {
     position: 'absolute',
     top: -8,
     width: 32,
     height: 3,
     borderRadius: 2,
+  },
+  badge: {
+    position: 'absolute',
+    top: -6,
+    right: -12,
+    minWidth: 16,
+    height: 16,
+    paddingHorizontal: 4,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  badgeText: {
+    fontSize: 10,
+    fontWeight: '700',
   },
   navLabel: {
     fontSize: 12,

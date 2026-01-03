@@ -22,7 +22,6 @@ export default function EnviarDocumento() {
   const { colors } = useTheme();
   const { alert, showError, showSuccess, dismissAlert } = useAlert();
   const [selectedFiles, setSelectedFiles] = useState<any[]>([]);
-  const [documentType, setDocumentType] = useState('Contracheque');
   const [loading, setLoading] = useState(false);
   const { pickDocument } = useDocumentPicker();
 
@@ -30,6 +29,7 @@ export default function EnviarDocumento() {
   const [pendingDocs, setPendingDocs] = useState<Array<{ type: string; description?: string }>>([]);
   const [analystNotes, setAnalystNotes] = useState('');
   const [simulationId, setSimulationId] = useState('');
+  const isPendingContext = pendingDocs.length > 0 || !!analystNotes.trim();
 
   useEffect(() => {
     if (params.pendingDocs && typeof params.pendingDocs === 'string') {
@@ -110,8 +110,8 @@ export default function EnviarDocumento() {
           } as any);
 
           formData.append('simulation_type', 'document_upload');
-          if (documentType) {
-            formData.append('document_type', documentType);
+          if (!isPendingContext) {
+            formData.append('document_type', 'Contracheque');
           }
           if (simulationId) {
             formData.append('simulation_id', simulationId);
@@ -169,7 +169,6 @@ export default function EnviarDocumento() {
           }
 
           setSelectedFiles([]);
-          setDocumentType('Contracheque');
           router.replace({
             pathname: '/screens/detalhes-simulacao',
             params: { id: simulationId, pendingReupload: '1' },
@@ -183,7 +182,6 @@ export default function EnviarDocumento() {
             : `${successCount} documento(s) enviado(s) com sucesso!`;
         showSuccess('Sucesso', message);
         setSelectedFiles([]);
-        setDocumentType('Contracheque');
       } else {
         showError(
           'Erro',
@@ -210,6 +208,39 @@ export default function EnviarDocumento() {
         contentContainerStyle={{ paddingBottom: 80 + insets.bottom }}
         showsVerticalScrollIndicator={false}
       >
+        <View style={styles.actionGroup}>
+          <Pressable
+            style={[styles.actionButton, { backgroundColor: colors.card, borderColor: colors.border }]}
+            onPress={handleTakePhoto}
+          >
+            <View style={[styles.actionIcon, { backgroundColor: colors.accent + '15' }]}>
+              <Ionicons name="camera-outline" size={24} color={colors.accent} />
+            </View>
+            <Text style={[styles.actionTitle, { color: colors.text }]}>Tirar foto</Text>
+            <Text style={[styles.actionSubtitle, { color: colors.textSecondary }]}>Abrir câmera</Text>
+          </Pressable>
+
+          <Pressable
+            style={[styles.actionButton, { backgroundColor: colors.card, borderColor: colors.border }]}
+            onPress={handlePickDocument}
+          >
+            <View style={[styles.actionIcon, { backgroundColor: colors.accent + '15' }]}>
+              <Ionicons name="document-text-outline" size={24} color={colors.accent} />
+            </View>
+            <Text style={[styles.actionTitle, { color: colors.text }]}>Anexar arquivo</Text>
+            <Text style={[styles.actionSubtitle, { color: colors.textSecondary }]}>PDF ou imagem</Text>
+          </Pressable>
+        </View>
+
+        {!isPendingContext && (
+          <View style={[styles.infoToast, { backgroundColor: colors.cardSecondary, borderColor: colors.accent + '40' }]}>
+            <Ionicons name="information-circle-outline" size={18} color={colors.accent} />
+            <Text style={[styles.infoToastText, { color: colors.textSecondary }]}>
+              Envie o contracheque mais recente. Foto ou PDF.
+            </Text>
+          </View>
+        )}
+
         {/* Seção de Pendências do Analista */}
         {(analystNotes || pendingDocs.length > 0) && (
           <View style={[styles.pendencyCard, { backgroundColor: colors.cardSecondary, borderColor: colors.warning + '50' }]}>
@@ -238,7 +269,7 @@ export default function EnviarDocumento() {
                 </Text>
                 {pendingDocs.map((doc, index) => (
                   <View key={index} style={[styles.pendingDocItem, { backgroundColor: colors.background }]}>
-                    <Ionicons name="document-text" size={18} color={colors.accent} />
+                    <Ionicons name="document-text-outline" size={18} color={colors.accent} />
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.pendingDocType, { color: colors.text }]}>
                         {doc.type}
@@ -256,97 +287,6 @@ export default function EnviarDocumento() {
           </View>
         )}
 
-        <View style={[styles.hero, { backgroundColor: colors.cardSecondary, borderColor: colors.accent + '60' }]}>
-          <View style={styles.heroHeader}>
-            <View style={[styles.heroIcon, { backgroundColor: colors.accent + '20' }]}>
-              <Ionicons name="document-attach" size={26} color={colors.accent} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.heroTitle, { color: colors.text }]}>
-                {pendingDocs.length > 0 ? 'Envie os documentos solicitados' : 'Envie seu contracheque'}
-              </Text>
-              <Text style={[styles.heroSubtitle, { color: colors.textSecondary }]}>
-                {pendingDocs.length > 0
-                  ? 'Você pode enviar múltiplos arquivos de uma vez.'
-                  : 'Envie foto ou anexo do seu contracheque para prosseguirmos com sua simulação.'}
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.slaChips}>
-            <View style={[styles.slaChip, { borderColor: colors.accent + '50' }]}>
-              <Ionicons name="time-outline" size={16} color={colors.accent} />
-              <View>
-                <Text style={[styles.slaLabel, { color: colors.text }]}>Novo contrato</Text>
-                <Text style={[styles.slaValue, { color: colors.accent }]}>Retorno em até 24h úteis</Text>
-              </View>
-            </View>
-            <View style={[styles.slaChip, { borderColor: colors.accent + '50' }]}>
-              <Ionicons name="refresh-outline" size={16} color={colors.accent} />
-              <View>
-                <Text style={[styles.slaLabel, { color: colors.text }]}>Recontratação</Text>
-                <Text style={[styles.slaValue, { color: colors.accent }]}>Retorno em até 7 dias úteis</Text>
-              </View>
-            </View>
-          </View>
-        </View>
-
-        <View style={[styles.stepsCard, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }]}>
-          <Text style={[styles.stepsTitle, { color: colors.text }]}>Como enviar</Text>
-          <View style={styles.stepItem}>
-            <Ionicons name="checkmark-circle" size={18} color={colors.success} />
-            <Text style={[styles.stepText, { color: colors.textSecondary }]}>Escolha foto ou PDF do contracheque.</Text>
-          </View>
-          <View style={styles.stepItem}>
-            <Ionicons name="checkmark-circle" size={18} color={colors.success} />
-            <Text style={[styles.stepText, { color: colors.textSecondary }]}>Garanta que os dados estejam legíveis.</Text>
-          </View>
-          <View style={styles.stepItem}>
-            <Ionicons name="checkmark-circle" size={18} color={colors.success} />
-            <Text style={[styles.stepText, { color: colors.textSecondary }]}>Selecione o tipo e envie para agilizar.</Text>
-          </View>
-        </View>
-
-        <View style={[styles.typeSelector, { backgroundColor: colors.card, borderColor: colors.border + '60' }]}>
-          <Text style={[styles.typeLabel, { color: colors.text }]}>Tipo de Documento (opcional)</Text>
-          <View style={styles.typeButtons}>
-            {['Contracheque', 'RG', 'CPF', 'CNH', 'Comprovante'].map((type) => (
-              <Pressable
-                key={type}
-                style={[
-                  styles.typeButton,
-                  { backgroundColor: documentType === type ? colors.accent : colors.background, borderColor: colors.border },
-                ]}
-                onPress={() => setDocumentType(type)}
-              >
-                <Text
-                  style={[
-                    styles.typeButtonText,
-                    { color: documentType === type ? colors.background : colors.textSecondary },
-                  ]}
-                >
-                  {type}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-          <Text style={[styles.helperText, { color: colors.textSecondary }]}>
-            Priorize o contracheque mais recente para acelerar sua análise.
-          </Text>
-        </View>
-
-        <View style={styles.buttonGroup}>
-          <Pressable style={[styles.optionButton, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }]} onPress={handleTakePhoto}>
-            <Ionicons name="camera" size={48} color={colors.accent} />
-            <Text style={[styles.optionText, { color: colors.accent }]}>Tirar Foto</Text>
-          </Pressable>
-
-          <Pressable style={[styles.optionButton, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }]} onPress={handlePickDocument}>
-            <Ionicons name="document" size={48} color={colors.accent} />
-            <Text style={[styles.optionText, { color: colors.accent }]}>Escolher Arquivo</Text>
-          </Pressable>
-        </View>
-
         {selectedFiles.length > 0 && (
           <View style={[styles.previewCard, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }]}>
             <Text style={[styles.previewTitle, { color: colors.text }]}>
@@ -358,7 +298,7 @@ export default function EnviarDocumento() {
                   <Image source={{ uri: file.uri }} style={styles.previewImageSmall} />
                 )}
                 <View style={styles.fileInfo}>
-                  <Ionicons name="document-text" size={24} color={colors.textSecondary} />
+                  <Ionicons name="document-text-outline" size={24} color={colors.textSecondary} />
                   <View style={styles.fileDetails}>
                     <Text style={[styles.fileName, { color: colors.text }]}>
                       {file.name || `Arquivo ${index + 1}`}
@@ -396,7 +336,7 @@ export default function EnviarDocumento() {
                 <ActivityIndicator color={colors.background} />
               ) : (
                 <>
-                  <Ionicons name="cloud-upload" size={24} color={colors.background} />
+                  <Ionicons name="cloud-upload-outline" size={24} color={colors.background} />
                   <Text style={[styles.sendPhotoButtonText, { color: colors.background }]}>
                     Enviar {selectedFiles.length > 1 ? `${selectedFiles.length} documentos` : 'documento'}
                   </Text>
@@ -410,26 +350,6 @@ export default function EnviarDocumento() {
             </Text>
           </View>
         )}
-
-        <View style={[styles.documentsCard, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }]}> 
-          <Text style={[styles.documentsTitle, { color: colors.text }]}>Documentos Aceitos</Text>
-          <View style={styles.documentItem}>
-            <Ionicons name="checkmark-circle" size={20} color={colors.success} />
-            <Text style={[styles.documentText, { color: colors.textSecondary }]}>Contracheque (preferencial)</Text>
-          </View>
-          <View style={styles.documentItem}>
-            <Ionicons name="checkmark-circle" size={20} color={colors.success} />
-            <Text style={[styles.documentText, { color: colors.textSecondary }]}>RG ou CNH</Text>
-          </View>
-          <View style={styles.documentItem}>
-            <Ionicons name="checkmark-circle" size={20} color={colors.success} />
-            <Text style={[styles.documentText, { color: colors.textSecondary }]}>CPF</Text>
-          </View>
-          <View style={styles.documentItem}>
-            <Ionicons name="checkmark-circle" size={20} color={colors.success} />
-            <Text style={[styles.documentText, { color: colors.textSecondary }]}>Comprovante de Residência</Text>
-          </View>
-        </View>
       </ScrollView>
 
       {alert && (
@@ -456,89 +376,47 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
   },
-  hero: {
-    margin: spacing.md,
-    padding: spacing.lg,
-    borderRadius: borderRadius.lg,
-    borderWidth: 1,
-    gap: spacing.md,
-  },
-  heroHeader: {
+  actionGroup: {
     flexDirection: 'row',
     gap: spacing.md,
+    margin: spacing.md,
   },
-  heroIcon: {
-    width: 48,
-    height: 48,
+  actionButton: {
+    flex: 1,
+    padding: spacing.md,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    gap: spacing.xs,
+  },
+  actionIcon: {
+    width: 40,
+    height: 40,
     borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  heroTitle: {
-    fontSize: 18,
+  actionTitle: {
+    fontSize: 15,
     fontWeight: '700',
   },
-  heroSubtitle: {
-    marginTop: 4,
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  slaChips: {
-    flexDirection: 'row',
-    gap: spacing.md,
-  },
-  slaChip: {
-    flex: 1,
-    padding: spacing.md,
-    borderRadius: borderRadius.md,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: spacing.sm,
-    alignItems: 'center',
-  },
-  slaLabel: {
+  actionSubtitle: {
     fontSize: 12,
-    fontWeight: '600',
   },
-  slaValue: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  stepsCard: {
+  infoToast: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
     marginHorizontal: spacing.md,
     marginBottom: spacing.md,
-    padding: spacing.md,
-    borderRadius: borderRadius.md,
-    gap: spacing.sm,
-  },
-  stepsTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  stepItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  stepText: {
-    fontSize: 14,
-  },
-  buttonGroup: {
-    flexDirection: 'row',
-    gap: spacing.md,
     paddingHorizontal: spacing.md,
-    marginBottom: spacing.md,
-  },
-  optionButton: {
-    flex: 1,
-    padding: spacing.lg,
+    paddingVertical: spacing.sm,
     borderRadius: borderRadius.md,
-    alignItems: 'center',
-    gap: spacing.sm,
+    borderWidth: 1,
   },
-  optionText: {
-    fontSize: 14,
-    fontWeight: '600',
+  infoToastText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 16,
   },
   previewCard: {
     marginHorizontal: spacing.md,
@@ -549,12 +427,6 @@ const styles = StyleSheet.create({
   previewTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    marginBottom: spacing.md,
-  },
-  previewImage: {
-    width: '100%',
-    height: 200,
-    borderRadius: borderRadius.sm,
     marginBottom: spacing.md,
   },
   fileInfo: {
@@ -572,24 +444,6 @@ const styles = StyleSheet.create({
   fileSize: {
     fontSize: 12,
     marginTop: 2,
-  },
-  photoActionButtons: {
-    flexDirection: 'row',
-    gap: spacing.md,
-    marginVertical: spacing.md,
-  },
-  retakeButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: spacing.md,
-    borderRadius: borderRadius.md,
-    gap: spacing.sm,
-  },
-  retakeButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
   },
   uploadContainer: {
     paddingHorizontal: spacing.md,
@@ -616,53 +470,6 @@ const styles = StyleSheet.create({
   helperText: {
     fontSize: 12,
     textAlign: 'left',
-  },
-  documentsCard: {
-    marginHorizontal: spacing.md,
-    marginBottom: spacing.md,
-    padding: spacing.md,
-    borderRadius: borderRadius.md,
-  },
-  documentsTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: spacing.md,
-  },
-  documentItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    paddingVertical: spacing.xs,
-  },
-  documentText: {
-    fontSize: 14,
-  },
-  typeSelector: {
-    marginHorizontal: spacing.md,
-    marginBottom: spacing.md,
-    padding: spacing.md,
-    borderRadius: borderRadius.md,
-    borderWidth: 1,
-    gap: spacing.sm,
-  },
-  typeLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  typeButtons: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-  },
-  typeButton: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: borderRadius.sm,
-    borderWidth: 1,
-  },
-  typeButtonText: {
-    fontSize: 13,
-    fontWeight: '500',
   },
   pendencyCard: {
     margin: spacing.md,

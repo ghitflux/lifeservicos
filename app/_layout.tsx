@@ -3,6 +3,7 @@ import { StatusBar } from 'expo-status-bar';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { ThemeProvider, useTheme } from '@/contexts/ThemeContext';
+import { NotificationsProvider } from '@/contexts/NotificationsContext';
 import { useSplashScreen } from '@/hooks/useSplashScreen';
 import { usePushNotifications } from '@/hooks/usePushNotifications';
 import { useCameraPermissionOnFirstLaunch } from '@/hooks/useCameraPermissionOnFirstLaunch';
@@ -64,9 +65,11 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ThemeProvider>
-        <QueryClientProvider client={queryClient}>
-          <RootLayoutContent />
-        </QueryClientProvider>
+        <NotificationsProvider>
+          <QueryClientProvider client={queryClient}>
+            <RootLayoutContent />
+          </QueryClientProvider>
+        </NotificationsProvider>
       </ThemeProvider>
     </GestureHandlerRootView>
   );
