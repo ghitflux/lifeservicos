@@ -22,14 +22,15 @@ export default function ForgotPassword() {
   const [loading, setLoading] = useState(false);
 
   const handleResetPassword = async () => {
-    if (!email || !cpf || !newPassword || !confirmPassword) {
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail || !cpf || !newPassword || !confirmPassword) {
       showError('Erro', 'Preencha todos os campos');
       return;
     }
 
     // Validação básica de e-mail
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
+    if (!emailRegex.test(trimmedEmail)) {
       showError('Erro', 'Por favor, informe um e-mail válido');
       return;
     }
@@ -54,7 +55,7 @@ export default function ForgotPassword() {
 
     try {
       await api.post('/auth/reset-password-cpf', {
-        email,
+        email: trimmedEmail,
         cpf: cpfDigits,
         new_password: newPassword,
       });
