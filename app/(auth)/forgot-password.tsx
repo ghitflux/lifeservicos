@@ -90,8 +90,9 @@ export default function ForgotPassword() {
       <ImageBackground
         source={LoginBackground}
         style={styles.backgroundImage}
-        resizeMode="cover"
+        resizeMode="contain"
       >
+        <View pointerEvents="none" style={styles.backdrop} />
         {/* Botão Voltar */}
         <Pressable
           style={styles.backButton}
@@ -215,6 +216,10 @@ export default function ForgotPassword() {
               <Ionicons name="arrow-back-circle-outline" size={18} color="#00D4FF" />
               <Text style={styles.backToLoginText}>Voltar ao Login</Text>
             </Pressable>
+
+            <Text style={styles.footerNote}>
+              Não somos um banco, trabalhamos em prol do Servidor Público
+            </Text>
           </View>
         </View>
       </ImageBackground>
@@ -242,6 +247,10 @@ const styles = StyleSheet.create({
   backgroundImage: {
     flex: 1,
   },
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(7, 12, 22, 0.55)',
+  },
   backButton: {
     position: 'absolute',
     top: 50,
@@ -260,12 +269,22 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    justifyContent: 'center',
+    justifyContent: 'flex-end',
     paddingHorizontal: spacing.lg,
-    paddingBottom: '10%',
+    paddingBottom: '8%',
   },
   form: {
     gap: spacing.lg,
+    backgroundColor: 'rgba(10, 16, 28, 0.7)',
+    borderRadius: borderRadius.lg,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.22,
+    shadowRadius: 12,
+    elevation: 6,
   },
   header: {
     alignItems: 'center',
@@ -306,12 +325,12 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     padding: spacing.md,
     fontSize: 15,
-    backgroundColor: 'rgba(255, 255, 255, 0.25)',
-    borderColor: 'rgba(255, 255, 255, 0.35)',
+    backgroundColor: 'rgba(15, 23, 42, 0.82)',
+    borderColor: 'rgba(255, 255, 255, 0.2)',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
     elevation: 5,
   },
   button: {
@@ -369,5 +388,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#00D4FF',
     textDecorationLine: 'underline',
+  },
+  footerNote: {
+    textAlign: 'center',
+    fontSize: 12,
+    lineHeight: 17,
+    color: 'rgba(255, 255, 255, 0.75)',
+    marginTop: spacing.xs,
   },
 });

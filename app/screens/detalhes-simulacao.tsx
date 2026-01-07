@@ -16,7 +16,10 @@ import * as SecureStore from 'expo-secure-store';
 const toSecureStoreKeyPart = (value: string) => String(value || '').trim().replace(/[^A-Za-z0-9._-]/g, '_');
 const pendingReuploadKey = (simulationId: string) => `pendingReupload_v1_${toSecureStoreKeyPart(simulationId)}`;
 const roundCurrency = (value: number) => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
-const isMarginBank = (bankName: string) => /margem/i.test(bankName || '');
+const isMarginBank = (bankName: string) => {
+  const normalized = String(bankName || '').trim().toLowerCase();
+  return normalized === 'margem*' || normalized === 'margem negativa';
+};
 
 interface Simulation {
   id: string;
@@ -174,6 +177,8 @@ export default function DetalhesSimulacao() {
     };
   }, [simulation]);
   const liberadoTotal = simulationTotals.liberadoTotal;
+  const prazoValue = Number(simulation?.prazo || simulation?.installments || 0);
+  const prazoLabel = prazoValue > 0 ? `${prazoValue}x` : '-';
 
   useEffect(() => {
     fetchSimulation();
@@ -233,22 +238,39 @@ export default function DetalhesSimulacao() {
 
   const fetchSimulation = async () => {
     try {
+      const rawId = Array.isArray(params?.id) ? params?.id[0] : params?.id;
+      const simulationId = String(rawId || '').trim();
+
+      if (!simulationId) {
+        showError('Erro', 'Simulação inválida.');
+        setLoading(false);
+        return;
+      }
+
       let data: any = null;
+      const isAdmin =
+        ['admin', 'supervisor', 'financeiro'].includes((user?.role || '').toLowerCase());
+      let adminError: any = null;
 
-      // Tenta detalhe completo (admin); se 403, cai para lista do cliente
-      try {
-        const adminDetail = await api.get(`/mobile/admin/simulations/${params.id}`);
-        data = adminDetail.data;
-      } catch (err: any) {
-        if (err?.response?.status !== 403 && err?.response?.status !== 404) {
-          throw err;
+      // Tenta detalhe completo (admin); se falhar, cai para lista do cliente
+      if (isAdmin) {
+        try {
+          const adminDetail = await api.get(`/mobile/admin/simulations/${simulationId}`);
+          data = adminDetail.data;
+        } catch (err: any) {
+          adminError = err;
         }
-
-        const listResponse = await api.get('/mobile/simulations');
-        data = (listResponse.data || []).find((sim: any) => String(sim.id) === String(params.id));
       }
 
       if (!data) {
+        const listResponse = await api.get('/mobile/simulations');
+        data = (listResponse.data || []).find((sim: any) => String(sim.id) === simulationId);
+      }
+
+      if (!data) {
+        if (adminError && adminError?.response?.status && adminError?.response?.status !== 403) {
+          throw adminError;
+        }
         throw new Error('Simulação não encontrada');
       }
 
@@ -545,32 +567,6 @@ export default function DetalhesSimulacao() {
           </View>
         )}
 
-        {showFinanceActions && (
-          <View style={styles.actionsRow}>
-            <Pressable style={[styles.rejectButton, { borderColor: (colors.error || '#ef4444') + '50', backgroundColor: colors.card }]} onPress={handleCancelFinance}>
-              <Ionicons name="close-circle" size={20} color={colors.error || '#ef4444'} />
-              <Text style={[styles.rejectButtonText, { color: colors.error || '#ef4444' }]}>Cancelar</Text>
-            </Pressable>
-            <Pressable style={[styles.approveButton, { backgroundColor: colors.success || '#22c55e' }]} onPress={handleSendToFinance}>
-              <Ionicons name="checkmark-circle" size={20} color="#fff" />
-              <Text style={[styles.approveButtonText, { color: '#fff' }]}>Enviar ao Financeiro</Text>
-            </Pressable>
-          </View>
-        )}
-
-        {!showFinanceActions && isAdminApproved && !isClientApproved && (
-          <View style={styles.actionsRow}>
-            <Pressable style={[styles.rejectButton, { borderColor: (colors.error || '#ef4444') + '50', backgroundColor: colors.card }]} onPress={handleRejectByClient}>
-              <Ionicons name="close-circle" size={20} color={colors.error || '#ef4444'} />
-              <Text style={[styles.rejectButtonText, { color: colors.error || '#ef4444' }]}>Reprovar</Text>
-            </Pressable>
-            <Pressable style={[styles.approveButton, { backgroundColor: colors.accent }]} onPress={handleApproveByClient}>
-              <Ionicons name="checkmark-circle" size={20} color={colors.background} />
-              <Text style={[styles.approveButtonText, { color: colors.background }]}>Aprovar</Text>
-            </Pressable>
-          </View>
-        )}
-
         {showSimulationResult && simulationTotals.hasCalculation && (
           <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border + '80' }]}>
             <View style={styles.sectionHeaderRow}>
@@ -584,142 +580,73 @@ export default function DetalhesSimulacao() {
             </View>
 
             <View style={styles.totalsList}>
+              <View style={[styles.totalRow, styles.totalRowEmphasis]}>
+                <Text style={[styles.totalLabel, styles.totalLabelEmphasis, { color: colors.textSecondary }]}>
+                  Valor Total Financiado
+                </Text>
+                <Text style={[styles.totalValue, styles.totalValueEmphasis, { color: colors.text }]}>
+                  {formatCurrency(simulationTotals.totalFinanciado)}
+                </Text>
+              </View>
               <View style={styles.totalRow}>
-                <Text style={[styles.totalLabel, { color: colors.textSecondary }]}>Valor Parcela Total</Text>
+                <Text style={[styles.totalLabel, { color: colors.textSecondary }]}>Valor da Parcela</Text>
                 <Text style={[styles.totalValue, { color: colors.text }]}>{formatCurrency(simulationTotals.totalParcela)}</Text>
               </View>
               <View style={styles.totalRow}>
-                <Text style={[styles.totalLabel, { color: colors.textSecondary }]}>Saldo Devedor Total</Text>
+                <Text style={[styles.totalLabel, { color: colors.textSecondary }]}>Nº de Parcelas / Prazo</Text>
+                <Text style={[styles.totalValue, { color: colors.text }]}>{prazoLabel}</Text>
+              </View>
+              <View style={[styles.deductionsHeader, { borderTopColor: colors.border + '50' }]}>
+                <Text style={[styles.deductionsLabel, { color: colors.textSecondary }]}>- Deduções</Text>
+              </View>
+              <View style={styles.totalRow}>
+                <Text style={[styles.totalLabel, { color: colors.textSecondary }]}>Saldo Devedor</Text>
                 <Text style={[styles.totalValue, { color: colors.text }]}>{formatCurrency(simulationTotals.saldoTotal)}</Text>
               </View>
               <View style={styles.totalRow}>
-                <Text style={[styles.totalLabel, { color: colors.textSecondary }]}>Valor Liberado Total</Text>
-                <Text style={[styles.totalValue, { color: colors.success || '#22c55e' }]}>{formatCurrency(simulationTotals.liberadoTotal)}</Text>
-              </View>
-              <View style={styles.totalRow}>
-                <Text style={[styles.totalLabel, { color: colors.textSecondary }]}>Seguro Obrigatório Banco</Text>
+                <Text style={[styles.totalLabel, { color: colors.textSecondary }]}>Seguro</Text>
                 <Text style={[styles.totalValue, { color: colors.text }]}>{formatCurrency(simulationTotals.seguroObrigatorio)}</Text>
               </View>
               <View style={styles.totalRow}>
-                <Text style={[styles.totalLabel, { color: colors.textSecondary }]}>Valor Total Financiado</Text>
-                <Text style={[styles.totalValue, { color: colors.text }]}>{formatCurrency(simulationTotals.totalFinanciado)}</Text>
-              </View>
-              <View style={styles.totalRow}>
-                <Text style={[styles.totalLabel, { color: colors.textSecondary }]}>Custo Consultoria</Text>
+                <Text style={[styles.totalLabel, { color: colors.textSecondary }]}>Consultoria</Text>
                 <Text style={[styles.totalValue, { color: colors.text }]}>{formatCurrency(simulationTotals.custoConsultoria)}</Text>
               </View>
               <View style={[styles.totalRow, styles.totalRowHighlight, { borderTopColor: colors.border + '50' }]}>
-                <Text style={[styles.totalLabel, { color: colors.success || '#22c55e', fontWeight: '700' }]}>Liberado para o Cliente</Text>
+                <Text style={[styles.totalLabel, { color: colors.success || '#22c55e', fontWeight: '700' }]}>Valor Líquido Liberado</Text>
                 <Text style={[styles.totalValue, styles.totalValueHighlight, { color: colors.success || '#22c55e' }]}>
                   {formatCurrency(simulationTotals.liberadoCliente)}
                 </Text>
               </View>
             </View>
-          </View>
-        )}
 
-        {Array.isArray(simulation.banks_json) && simulation.banks_json.length > 0 && (
-          <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border + '80' }]}>
-            <View style={styles.sectionHeader}>
-              <Ionicons name="business" size={20} color={colors.accent} />
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>Bancos e produtos</Text>
-            </View>
-            {simulation.banks_json.map((bank: any, index: number) => (
-              <View key={`${bank.bank || bank.banco || 'bank'}-${index}`} style={{ marginBottom: spacing.sm }}>
-                <View style={styles.banksRow}>
-                  <View style={[styles.bankBadge, { borderColor: colors.border }]}>
-                    <Text style={[styles.bankBadgeText, { color: colors.text }]}>
-                      {(bank.bank || bank.banco || 'Banco').toString().toUpperCase()}
-                    </Text>
-                  </View>
-                  {bank.product && (
-                    <View style={[styles.bankBadge, { borderColor: colors.border }]}>
-                      <Text style={[styles.bankBadgeText, { color: colors.textSecondary }]}>
-                        {bank.product}
-                      </Text>
-                    </View>
-                  )}
-                </View>
-                <View style={styles.bankInfo}>
-                  <Text style={[styles.bankInfoText, { color: colors.textSecondary }]}>
-                    Parcela: {formatCurrency(Number(bank.parcela || 0))}
-                  </Text>
-                  <Text style={[styles.bankInfoText, { color: colors.textSecondary }]}>
-                    Saldo: {formatCurrency(Number(bank.saldoDevedor || 0))}
-                  </Text>
-                  <Text style={[styles.bankInfoText, { color: colors.textSecondary }]}>
-                    Liberado: {formatCurrency(Number(bank.valorLiberado || 0))}
-                  </Text>
-                </View>
-              </View>
-            ))}
-          </View>
-        )}
-
-        {(simulation.percentual_consultoria || simulation.seguro) && (
-          <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border + '80' }]}>
-            <View style={styles.sectionHeader}>
-              <Ionicons name="stats-chart" size={20} color={colors.accent} />
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>Custos e consultoria</Text>
-            </View>
-            {simulation.percentual_consultoria !== undefined && (
-              <View style={styles.infoRow}>
-                <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>% Consultoria</Text>
-                <Text style={[styles.infoValue, { color: colors.text }]}>{simulation.percentual_consultoria}%</Text>
+            {showFinanceActions && (
+              <View style={[styles.actionsRow, { marginTop: spacing.md, marginBottom: 0 }]}>
+                <Pressable style={[styles.rejectButton, { borderColor: (colors.error || '#ef4444') + '50', backgroundColor: colors.card }]} onPress={handleCancelFinance}>
+                  <Ionicons name="close-circle" size={20} color={colors.error || '#ef4444'} />
+                  <Text style={[styles.rejectButtonText, { color: colors.error || '#ef4444' }]}>Cancelar</Text>
+                </Pressable>
+                <Pressable style={[styles.approveButton, { backgroundColor: colors.success || '#22c55e' }]} onPress={handleSendToFinance}>
+                  <Ionicons name="checkmark-circle" size={20} color="#fff" />
+                  <Text style={[styles.approveButtonText, { color: '#fff' }]}>Enviar ao Financeiro</Text>
+                </Pressable>
               </View>
             )}
-            {simulation.seguro !== undefined && (
-              <View style={styles.infoRow}>
-                <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>Seguro</Text>
-                <Text style={[styles.infoValue, { color: colors.text }]}>{formatCurrency(Number(simulation.seguro || 0))}</Text>
+
+            {!showFinanceActions && isAdminApproved && !isClientApproved && (
+              <View style={[styles.actionsRow, { marginTop: spacing.md, marginBottom: 0 }]}>
+                <Pressable style={[styles.rejectButton, { borderColor: (colors.error || '#ef4444') + '50', backgroundColor: colors.card }]} onPress={handleRejectByClient}>
+                  <Ionicons name="close-circle" size={20} color={colors.error || '#ef4444'} />
+                  <Text style={[styles.rejectButtonText, { color: colors.error || '#ef4444' }]}>Reprovar</Text>
+                </Pressable>
+                <Pressable style={[styles.approveButton, { backgroundColor: colors.accent }]} onPress={handleApproveByClient}>
+                  <Ionicons name="checkmark-circle" size={20} color={colors.background} />
+                  <Text style={[styles.approveButtonText, { color: colors.background }]}>Aprovar</Text>
+                </Pressable>
               </View>
             )}
           </View>
         )}
 
-        <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border + '80' }]}>
-          <View style={styles.sectionHeader}>
-            <Ionicons name="information-circle" size={20} color={colors.accent} />
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Informações</Text>
-          </View>
-          <View style={styles.infoRow}>
-            <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>Tipo:</Text>
-            <Text style={[styles.infoValue, { color: colors.text }]}>{simulationTypeLabel}</Text>
-          </View>
-          <View style={styles.infoRow}>
-            <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>Data:</Text>
-            <Text style={[styles.infoValue, { color: colors.text }]}>
-              {new Date(simulation.created_at).toLocaleDateString('pt-BR', {
-                day: '2-digit',
-                month: 'long',
-                year: 'numeric',
-              })}
-            </Text>
-          </View>
-          {Array.isArray(simulation.documents) && simulation.documents.length > 0 && (
-            <>
-              <View style={[styles.divider, { backgroundColor: colors.border + '50' }]} />
-              <Text style={[styles.sectionSubtitle, { color: colors.text }]}>Documentos enviados</Text>
-              {simulation.documents.map((doc, idx) => (
-                <View key={`${doc.id || idx}`} style={styles.infoRow}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>
-                      {doc.document_type || 'Documento'}
-                    </Text>
-                    <Text style={[styles.infoValue, { color: colors.text }]}>
-                      {doc.document_filename || 'Arquivo'}
-                    </Text>
-                  </View>
-                  {doc.created_at && (
-                    <Text style={[styles.infoValue, { color: colors.textSecondary }]}>
-                      {new Date(doc.created_at).toLocaleDateString('pt-BR')}
-                    </Text>
-                  )}
-                </View>
-              ))}
-            </>
-          )}
-        </View>
       </ScrollView>
 
       {alert && (
@@ -989,12 +916,33 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: spacing.sm,
   },
+  totalRowEmphasis: {
+    paddingVertical: spacing.md,
+  },
   totalLabel: {
     fontSize: 14,
+  },
+  totalLabelEmphasis: {
+    fontSize: 13,
+    fontWeight: '600',
   },
   totalValue: {
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  totalValueEmphasis: {
+    fontSize: 20,
+    fontWeight: '800',
+  },
+  deductionsHeader: {
+    borderTopWidth: 1,
+    paddingTop: spacing.sm,
+    marginTop: spacing.xs,
+  },
+  deductionsLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.6,
   },
   totalRowHighlight: {
     borderTopWidth: 1,

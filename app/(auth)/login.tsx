@@ -1,4 +1,4 @@
-import { View, Text, TextInput, StyleSheet, Pressable, ActivityIndicator, ImageBackground, Dimensions } from 'react-native';
+import { View, Text, TextInput, StyleSheet, Pressable, ActivityIndicator, ImageBackground } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -67,8 +67,9 @@ export default function Login() {
       <ImageBackground
         source={LoginBackground}
         style={styles.backgroundImage}
-        resizeMode="cover"
+        resizeMode="contain"
       >
+      <View pointerEvents="none" style={styles.backdrop} />
       <View style={styles.content}>
         <View style={styles.form}>
         <TextInput
@@ -103,14 +104,6 @@ export default function Login() {
             </View>
           </Pressable>
         </View>
-
-        {/* Link Esqueceu a senha */}
-        <Pressable
-          style={styles.forgotPasswordButton}
-          onPress={() => router.push('/(auth)/forgot-password')}
-        >
-          <Text style={styles.forgotPasswordText}>Esqueceu a senha?</Text>
-        </Pressable>
 
         <Pressable
           style={[styles.button, { backgroundColor: colors.accent, opacity: loading ? 0.7 : 1 }]}
@@ -151,6 +144,18 @@ export default function Login() {
             Ainda não tem conta? Cadastre-se gratuitamente e{'\n'}solicite sua simulação com as melhores condições!
           </Text>
         </View>
+
+        {/* Link Esqueceu a senha */}
+        <Pressable
+          style={styles.forgotPasswordButton}
+          onPress={() => router.push('/(auth)/forgot-password')}
+        >
+          <Text style={styles.forgotPasswordText}>Esqueceu a senha?</Text>
+        </Pressable>
+
+        <Text style={styles.footerNote}>
+          Não somos um banco, trabalhamos em prol do Servidor Público
+        </Text>
         </View>
       </View>
 
@@ -175,32 +180,42 @@ const styles = StyleSheet.create({
     backgroundColor: '#0a0a0a',
   },
   backgroundImage: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: '80%',
+    flex: 1,
+  },
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(7, 12, 22, 0.55)',
   },
   content: {
     flex: 1,
     justifyContent: 'flex-end',
     paddingHorizontal: spacing.lg,
-    paddingBottom: '15%',
+    paddingBottom: '8%',
   },
   form: {
     gap: spacing.md,
+    backgroundColor: 'rgba(10, 16, 28, 0.7)',
+    borderRadius: borderRadius.lg,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.22,
+    shadowRadius: 12,
+    elevation: 6,
   },
   input: {
     borderWidth: 1,
     borderRadius: borderRadius.md,
     padding: spacing.md,
     fontSize: 15,
-    backgroundColor: 'rgba(255, 255, 255, 0.25)',
-    borderColor: 'rgba(255, 255, 255, 0.35)',
+    backgroundColor: 'rgba(15, 23, 42, 0.82)',
+    borderColor: 'rgba(255, 255, 255, 0.2)',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
     elevation: 5,
   },
   passwordContainer: {
@@ -212,12 +227,12 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     paddingRight: 56,
     fontSize: 15,
-    backgroundColor: 'rgba(255, 255, 255, 0.25)',
-    borderColor: 'rgba(255, 255, 255, 0.35)',
+    backgroundColor: 'rgba(15, 23, 42, 0.82)',
+    borderColor: 'rgba(255, 255, 255, 0.2)',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
     elevation: 5,
   },
   eyeIconButton: {
@@ -252,10 +267,10 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   forgotPasswordButton: {
-    alignSelf: 'flex-end',
+    alignSelf: 'center',
     paddingVertical: spacing.xs,
     paddingHorizontal: spacing.sm,
-    marginTop: -spacing.xs,
+    marginTop: spacing.sm,
   },
   forgotPasswordText: {
     fontSize: 13,
@@ -323,5 +338,11 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
   },
+  footerNote: {
+    textAlign: 'center',
+    fontSize: 12,
+    lineHeight: 17,
+    color: 'rgba(255, 255, 255, 0.75)',
+    marginTop: spacing.xs,
+  },
 });
-

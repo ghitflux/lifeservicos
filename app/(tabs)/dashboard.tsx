@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, RefreshControl, Animated, Easing } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, RefreshControl, Animated, Easing, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'expo-router';
@@ -14,6 +14,7 @@ export default function Dashboard() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
+  const { width } = useWindowDimensions();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [dashboardData, setDashboardData] = useState<any>({
@@ -84,9 +85,29 @@ export default function Dashboard() {
     router.push('/screens/ajuda-suporte');
   };
 
-  const bannerMessage = 'Você pode solicitar uma simulação todo mês enviando apenas o contracheque.';
-  const bannerTranslateX = useRef(new Animated.Value(0)).current;
-  const [bannerItemWidth, setBannerItemWidth] = useState(0);
+  const benefitBanners = [
+    {
+      title: 'Melhores taxas',
+      description: 'Temos as melhores taxas do mercado.',
+      icon: 'trending-down',
+      colors: ['#0ea5e9', '#2563eb'],
+    },
+    {
+      title: 'Menos burocracia',
+      description: 'Tudo simples e direto pelo app.',
+      icon: 'sparkles',
+      colors: ['#f97316', '#f59e0b'],
+    },
+    {
+      title: 'Acompanhamento',
+      description: 'Acompanhamento individual do início ao fim.',
+      icon: 'person-circle',
+      colors: ['#22c55e', '#16a34a'],
+    },
+  ];
+  const bannerScrollRef = useRef<ScrollView>(null);
+  const bannerIndexRef = useRef(0);
+  const bannerCardWidth = Math.min(320, Math.round(width * 0.78));
 
   // Animação pulsante para o card de simulação
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -113,26 +134,19 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
-    if (!bannerItemWidth) return;
+    if (!bannerCardWidth) return;
 
-    const gap = spacing.lg;
-    const distance = bannerItemWidth + gap;
-    const durationMs = Math.max(9000, Math.round(distance * 26)); // ~26ms por px
+    const step = bannerCardWidth + spacing.md;
+    const interval = setInterval(() => {
+      bannerIndexRef.current = (bannerIndexRef.current + 1) % benefitBanners.length;
+      bannerScrollRef.current?.scrollTo({
+        x: bannerIndexRef.current * step,
+        animated: true,
+      });
+    }, 3800);
 
-    bannerTranslateX.setValue(0);
-    const animation = Animated.loop(
-      Animated.timing(bannerTranslateX, {
-        toValue: -distance,
-        duration: durationMs,
-        easing: Easing.linear,
-        useNativeDriver: true,
-      }),
-      { resetBeforeIteration: true }
-    );
-
-    animation.start();
-    return () => animation.stop();
-  }, [bannerItemWidth, bannerTranslateX]);
+    return () => clearInterval(interval);
+  }, [bannerCardWidth, benefitBanners.length]);
 
   const getToneColor = (tone: string) => {
     if (tone === 'success') return colors.success || '#22c55e';
@@ -234,30 +248,11 @@ export default function Dashboard() {
               {/* Conteúdo principal */}
               <View style={styles.prominentCardBody}>
                 <Text style={styles.prominentTitle}>
-                  Solicite aqui sua simulação
-                </Text>
-                <Text style={styles.prominentHighlight}>
-                  com as melhores taxas do mercado{'\n'}com menos burocracia
+                  Solicite sua simulação
                 </Text>
                 <Text style={styles.prominentSubtitle}>
-                  Envie foto ou documento do seu contracheque e receba sua análise rapidamente
+                  Envie o contracheque e receba a análise rapidamente.
                 </Text>
-
-                {/* Badges de benefícios */}
-                <View style={styles.benefitsContainer}>
-                  <View style={styles.benefitBadge}>
-                    <Ionicons name="trending-down" size={16} color="#10b981" />
-                    <Text style={styles.benefitText}>Menores taxas</Text>
-                  </View>
-                  <View style={styles.benefitBadge}>
-                    <Ionicons name="flash" size={16} color="#10b981" />
-                    <Text style={styles.benefitText}>Sem burocracia</Text>
-                  </View>
-                  <View style={styles.benefitBadge}>
-                    <Ionicons name="time" size={16} color="#10b981" />
-                    <Text style={styles.benefitText}>Rápido</Text>
-                  </View>
-                </View>
 
                 {/* Botão de ação */}
                 <View style={styles.prominentButtonContainer}>
@@ -270,28 +265,38 @@ export default function Dashboard() {
         </Animated.View>
       </View>
 
-      {/* Avisos */}
+      {/* Banners de Benefícios */}
       <View style={[styles.section, { paddingTop: 0 }]}>
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>Avisos</Text>
-        <View style={[styles.bannerViewport, { borderColor: colors.border, backgroundColor: colors.card }]}>
-          <Animated.View style={[styles.bannerTrack, { transform: [{ translateX: bannerTranslateX }] }]}>
-            <View
-              onLayout={(e) => {
-                const w = e.nativeEvent.layout.width;
-                if (w && w !== bannerItemWidth) setBannerItemWidth(w);
-              }}
-              style={[styles.bannerItem, { borderColor: colors.border, backgroundColor: colors.cardSecondary }]}
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>Vantagens</Text>
+        <ScrollView
+          ref={bannerScrollRef}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          snapToInterval={bannerCardWidth + spacing.md}
+          decelerationRate="fast"
+          contentContainerStyle={{ paddingHorizontal: spacing.md }}
+        >
+          {benefitBanners.map((banner, index) => (
+            <LinearGradient
+              key={`${banner.title}-${index}`}
+              colors={banner.colors}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={[
+                styles.benefitBanner,
+                { width: bannerCardWidth, marginRight: index === benefitBanners.length - 1 ? 0 : spacing.md },
+              ]}
             >
-              <Ionicons name="information-circle-outline" size={18} color={colors.text} />
-              <Text style={[styles.bannerText, { color: colors.textSecondary }]}>{bannerMessage}</Text>
-            </View>
-            <View style={{ width: spacing.lg }} />
-            <View style={[styles.bannerItem, { borderColor: colors.border, backgroundColor: colors.cardSecondary }]}>
-              <Ionicons name="information-circle-outline" size={18} color={colors.text} />
-              <Text style={[styles.bannerText, { color: colors.textSecondary }]}>{bannerMessage}</Text>
-            </View>
-          </Animated.View>
-        </View>
+              <View style={styles.benefitBannerHeader}>
+                <View style={styles.benefitIconWrap}>
+                  <Ionicons name={banner.icon as any} size={20} color="#ffffff" />
+                </View>
+                <Text style={styles.benefitTitle}>{banner.title}</Text>
+              </View>
+              <Text style={styles.benefitDescription}>{banner.description}</Text>
+            </LinearGradient>
+          ))}
+        </ScrollView>
       </View>
 
       {dashboardData.recentActivity.length > 0 && (
@@ -370,8 +375,8 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.lg,
   },
   prominentSection: {
-    paddingTop: spacing.lg,
-    paddingBottom: spacing.xl,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.lg,
   },
   sectionTitle: {
     fontSize: 18,
@@ -429,8 +434,8 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   gradientCard: {
-    padding: spacing.lg,
-    paddingVertical: spacing.lg,
+    padding: spacing.md,
+    paddingVertical: spacing.md,
     flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
@@ -443,12 +448,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
-    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
     borderRadius: borderRadius.md,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
+    borderColor: 'rgba(255, 255, 255, 0.25)',
   },
   highlightBadgeText: {
     fontSize: 10,
@@ -461,8 +466,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   prominentIconContainer: {
-    width: 72,
-    height: 72,
+    width: 56,
+    height: 56,
     borderRadius: borderRadius.full,
     justifyContent: 'center',
     alignItems: 'center',
@@ -482,61 +487,29 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   prominentTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '900',
     textAlign: 'center',
     color: '#ffffff',
     letterSpacing: 0.3,
   },
-  prominentHighlight: {
-    fontSize: 15,
-    fontWeight: '700',
-    textAlign: 'center',
-    color: '#ffffff',
-    lineHeight: 21,
-    marginTop: spacing.xs,
-    textShadowColor: 'rgba(0, 0, 0, 0.15)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 2,
-  },
   prominentSubtitle: {
-    fontSize: 13,
+    fontSize: 12,
     textAlign: 'center',
-    lineHeight: 18,
+    lineHeight: 16,
     color: 'rgba(255, 255, 255, 0.9)',
     marginTop: spacing.xs,
     paddingHorizontal: spacing.sm,
-  },
-  benefitsContainer: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    marginTop: spacing.md,
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-  },
-  benefitBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    backgroundColor: '#ffffff',
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    borderRadius: borderRadius.full,
-  },
-  benefitText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#047857',
   },
   prominentButtonContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.sm,
-    marginTop: spacing.md,
+    marginTop: spacing.sm,
     backgroundColor: '#ffffff',
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    paddingVertical: spacing.xs,
     borderRadius: borderRadius.full,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
@@ -545,33 +518,44 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   prominentButtonText: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '800',
     color: '#047857',
     letterSpacing: 0.3,
   },
-  bannerViewport: {
-    borderWidth: 1,
+  benefitBanner: {
     borderRadius: borderRadius.lg,
-    paddingVertical: spacing.sm,
-    overflow: 'hidden',
+    padding: spacing.md,
+    minHeight: 120,
+    justifyContent: 'space-between',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 6,
   },
-  bannerTrack: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  bannerItem: {
+  benefitBannerHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    borderWidth: 1,
-    borderRadius: borderRadius.lg,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
   },
-  bannerText: {
+  benefitIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  benefitTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#ffffff',
+  },
+  benefitDescription: {
     fontSize: 12,
     lineHeight: 16,
+    color: 'rgba(255, 255, 255, 0.9)',
   },
   statusCard: {
     flexDirection: 'row',
