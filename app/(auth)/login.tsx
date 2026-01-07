@@ -104,6 +104,14 @@ export default function Login() {
           </Pressable>
         </View>
 
+        {/* Link Esqueceu a senha */}
+        <Pressable
+          style={styles.forgotPasswordButton}
+          onPress={() => router.push('/(auth)/forgot-password')}
+        >
+          <Text style={styles.forgotPasswordText}>Esqueceu a senha?</Text>
+        </Pressable>
+
         <Pressable
           style={[styles.button, { backgroundColor: colors.accent, opacity: loading ? 0.7 : 1 }]}
           onPress={handleLogin}
@@ -116,21 +124,33 @@ export default function Login() {
           )}
         </Pressable>
 
-        <Pressable
-          style={({ pressed }) => [
-            styles.createAccountButton,
-            {
-              opacity: pressed ? 0.85 : 1,
-            },
-          ]}
-          onPress={() => router.push('/(auth)/register')}
-        >
-          <Ionicons name="person-add-outline" size={15} color="#FFFFFF" />
-          <Text style={styles.createAccountText}>Criar conta</Text>
-        </Pressable>
-        <Text style={styles.createAccountHint}>
-          Ainda não tem conta? Crie uma agora para solicitar sua simulação.
-        </Text>
+        {/* Seção de Criar Conta - Melhorada */}
+        <View style={styles.createAccountSection}>
+          <Text style={styles.dividerText}>OU</Text>
+
+          <Pressable
+            style={({ pressed }) => [
+              styles.createAccountButton,
+              {
+                opacity: pressed ? 0.85 : 1,
+              },
+            ]}
+            onPress={() => router.push('/(auth)/register')}
+          >
+            <View style={styles.createAccountIconContainer}>
+              <Ionicons name="person-add" size={22} color="#00D4FF" />
+            </View>
+            <View style={styles.createAccountTextContainer}>
+              <Text style={styles.createAccountTitle}>Criar Nova Conta</Text>
+              <Text style={styles.createAccountSubtitle}>Rápido e sem burocracia</Text>
+            </View>
+            <Ionicons name="arrow-forward" size={20} color="#00D4FF" />
+          </Pressable>
+
+          <Text style={styles.createAccountHint}>
+            Ainda não tem conta? Cadastre-se gratuitamente e{'\n'}solicite sua simulação com as melhores condições!
+          </Text>
+        </View>
         </View>
       </View>
 
@@ -231,34 +251,73 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
   },
+  forgotPasswordButton: {
+    alignSelf: 'flex-end',
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    marginTop: -spacing.xs,
+  },
+  forgotPasswordText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#00D4FF',
+    textDecorationLine: 'underline',
+  },
+  createAccountSection: {
+    marginTop: spacing.lg,
+    gap: spacing.md,
+  },
+  dividerText: {
+    textAlign: 'center',
+    fontSize: 12,
+    fontWeight: '700',
+    color: 'rgba(255, 255, 255, 0.7)',
+    letterSpacing: 1,
+  },
   createAccountButton: {
-    marginTop: spacing.md,
-    paddingVertical: spacing.sm + spacing.xs,
+    paddingVertical: spacing.md,
     paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    backgroundColor: 'rgba(0, 212, 255, 0.15)',
+    borderWidth: 2,
+    borderColor: 'rgba(0, 212, 255, 0.4)',
+    shadowColor: '#00D4FF',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  createAccountIconContainer: {
+    width: 44,
+    height: 44,
     borderRadius: borderRadius.md,
+    backgroundColor: 'rgba(0, 212, 255, 0.2)',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    flexDirection: 'row',
-    gap: spacing.sm,
-    backgroundColor: 'rgba(255, 255, 255, 0.25)',
-    borderColor: 'rgba(255, 255, 255, 0.35)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 5,
+    borderColor: 'rgba(0, 212, 255, 0.3)',
   },
-  createAccountText: {
-    fontSize: 14,
-    fontWeight: '600',
+  createAccountTextContainer: {
+    flex: 1,
+  },
+  createAccountTitle: {
+    fontSize: 16,
+    fontWeight: '700',
     color: '#FFFFFF',
+    marginBottom: 2,
+  },
+  createAccountSubtitle: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: 'rgba(255, 255, 255, 0.8)',
   },
   createAccountHint: {
-    marginTop: spacing.sm,
     textAlign: 'center',
-    fontSize: 11,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
     color: 'rgba(255, 255, 255, 0.85)',
     textShadowColor: 'rgba(0, 0, 0, 0.8)',
     textShadowOffset: { width: 0, height: 1 },

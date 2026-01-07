@@ -20,7 +20,7 @@ export default function EnviarDocumento() {
   const params = useLocalSearchParams();
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
-  const { alert, showError, showSuccess, dismissAlert } = useAlert();
+  const { alert, showAlert, showError, showSuccess, dismissAlert } = useAlert();
   const [selectedFiles, setSelectedFiles] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const { pickDocument } = useDocumentPicker();
@@ -180,8 +180,27 @@ export default function EnviarDocumento() {
           failCount > 0
             ? `${successCount} documento(s) enviado(s) com sucesso. ${failCount} falhou(aram).`
             : `${successCount} documento(s) enviado(s) com sucesso!`;
-        showSuccess('Sucesso', message);
+
+        // Limpar arquivos selecionados
         setSelectedFiles([]);
+
+        // Mostrar alerta com botão para voltar ao início
+        showAlert({
+          title: 'Documento Enviado!',
+          message,
+          icon: 'checkmark-circle',
+          iconColor: '#4CAF50',
+          buttons: [
+            {
+              text: 'Voltar para Início',
+              onPress: () => {
+                dismissAlert();
+                router.replace('/(tabs)/dashboard');
+              },
+              style: 'default',
+            },
+          ],
+        });
       } else {
         showError(
           'Erro',

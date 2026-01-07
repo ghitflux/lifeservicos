@@ -9,7 +9,9 @@
     "web": "expo start --web",
     "test": "jest",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "config:ip": "node scripts/get-local-ip.js",
+    "dev": "npm run config:ip && expo start"
   },
   "dependencies": {
     "@expo-google-fonts/inter": "^0.4.2",
