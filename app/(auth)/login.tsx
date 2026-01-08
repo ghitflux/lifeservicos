@@ -1,4 +1,4 @@
-import { View, Text, TextInput, StyleSheet, Pressable, ActivityIndicator, ImageBackground } from 'react-native';
+import { View, Text, TextInput, StyleSheet, Pressable, ActivityIndicator, ImageBackground, Image } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -9,7 +9,8 @@ import { useAuth } from '@/hooks/useAuth';
 import { useAlert } from '@/hooks/useAlert';
 import { loadCredentials } from '@/utils/credentials';
 
-const LoginBackground = require('../../assets/login-bg.png');
+const LoginBackground = require('../../assets/login.png');
+const LifeLogo = require('../../assets/life-logo.png');
 
 export default function Login() {
   const router = useRouter();
@@ -67,10 +68,17 @@ export default function Login() {
       <ImageBackground
         source={LoginBackground}
         style={styles.backgroundImage}
-        resizeMode="contain"
+        resizeMode="cover"
       >
-      <View pointerEvents="none" style={styles.backdrop} />
       <View style={styles.content}>
+        <Image
+          source={LifeLogo}
+          style={styles.logo}
+          resizeMode="contain"
+        />
+        <Text style={styles.tagline}>
+          Não somos um banco, trabalhamos em prol do Servidor Público
+        </Text>
         <View style={styles.form}>
         <TextInput
           style={[styles.input, { color: '#FFFFFF' }]}
@@ -152,10 +160,6 @@ export default function Login() {
         >
           <Text style={styles.forgotPasswordText}>Esqueceu a senha?</Text>
         </Pressable>
-
-        <Text style={styles.footerNote}>
-          Não somos um banco, trabalhamos em prol do Servidor Público
-        </Text>
         </View>
       </View>
 
@@ -182,9 +186,23 @@ const styles = StyleSheet.create({
   backgroundImage: {
     flex: 1,
   },
-  backdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(7, 12, 22, 0.55)',
+  logo: {
+    width: '60%',
+    height: 80,
+    alignSelf: 'center',
+    marginBottom: spacing.md,
+  },
+  tagline: {
+    textAlign: 'center',
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#00D4FF',
+    marginBottom: spacing.xl,
+    paddingHorizontal: spacing.lg,
+    textShadowColor: 'rgba(0, 0, 0, 0.9)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
+    letterSpacing: 0.3,
   },
   content: {
     flex: 1,
@@ -194,16 +212,6 @@ const styles = StyleSheet.create({
   },
   form: {
     gap: spacing.md,
-    backgroundColor: 'rgba(10, 16, 28, 0.7)',
-    borderRadius: borderRadius.lg,
-    padding: spacing.lg,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.22,
-    shadowRadius: 12,
-    elevation: 6,
   },
   input: {
     borderWidth: 1,
@@ -296,14 +304,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
-    backgroundColor: 'rgba(0, 212, 255, 0.15)',
     borderWidth: 2,
-    borderColor: 'rgba(0, 212, 255, 0.4)',
-    shadowColor: '#00D4FF',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 6,
+    borderColor: 'rgba(0, 212, 255, 0.5)',
   },
   createAccountIconContainer: {
     width: 44,
@@ -337,12 +339,5 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0, 0, 0, 0.8)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
-  },
-  footerNote: {
-    textAlign: 'center',
-    fontSize: 12,
-    lineHeight: 17,
-    color: 'rgba(255, 255, 255, 0.75)',
-    marginTop: spacing.xs,
   },
 });

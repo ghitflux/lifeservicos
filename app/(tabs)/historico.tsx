@@ -18,6 +18,9 @@ interface Simulation {
   interest_rate: number;
   installment_value: number;
   total_amount: number;
+  net_amount?: number; // Valor líquido liberado (após descontos)
+  released_amount?: number; // Valor liberado real para o cliente
+  approved_amount?: number; // Valor aprovado
   status: string;
   created_at: string;
   type: 'simulation';
@@ -169,10 +172,12 @@ export default function Historico() {
                         </Text>
                       )}
                       <Text style={[styles.cardAmount, { color: colors.accent }]}>
-                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(simulation.requested_amount)}
+                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(
+                          simulation.net_amount ?? simulation.released_amount ?? simulation.approved_amount ?? simulation.requested_amount
+                        )}
                       </Text>
                       <Text style={[styles.cardSubtext, { color: colors.textSecondary }]}>
-                        Valor liberado para o cliente
+                        Valor líquido liberado
                       </Text>
                     </View>
                     <View style={[styles.statusIcon, { borderColor: statusColor }]}>
