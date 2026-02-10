@@ -315,11 +315,8 @@ export default function FinanceiroPageClient() {
     receita: calculateTrend(metrics.totalRevenue || 0, previousMetrics.totalRevenue || 0),
     consultoria: calculateTrend(metrics.totalConsultoriaLiq || 0, previousMetrics.totalConsultoriaLiq || 0),
     lucro: calculateTrend(metrics.netProfit || 0, previousMetrics.netProfit || 0),
-    despesas: calculateTrend(
-      (metrics.totalExpenses || 0) + (metrics.totalTax || 0) - (metrics.totalManualTaxes || 0),
-      (previousMetrics.totalExpenses || 0) + (previousMetrics.totalTax || 0) - (previousMetrics.totalManualTaxes || 0)
-    ),
-    imposto: calculateTrend(metrics.totalTax || 0, previousMetrics.totalTax || 0), // Agora usa apenas impostos manuais
+    despesas: calculateTrend(metrics.totalExpenses || 0, previousMetrics.totalExpenses || 0),
+    imposto: calculateTrend(metrics.totalTax || 0, previousMetrics.totalTax || 0),
     comissoes: calculateTrend(metrics.totalCommissions || 0, previousMetrics.totalCommissions || 0)
   };
 
@@ -928,7 +925,7 @@ export default function FinanceiroPageClient() {
         />
         <KPICard
           title="Consultoria Líquida Total"
-          subtitle="86% da Receita Total"
+          subtitle="Receitas de consultoria - Despesas"
           value={`R$ ${(metrics.totalConsultoriaLiq || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`}
           isLoading={metricsLoading}
           gradientVariant="cyan"
@@ -937,7 +934,7 @@ export default function FinanceiroPageClient() {
         />
         <KPICard
           title="Lucro Líquido"
-          subtitle="Consultoria Líquida - Despesas"
+          subtitle="Receita Total - Despesas - Impostos"
           value={`R$ ${(metrics.netProfit || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`}
           isLoading={metricsLoading}
           gradientVariant="violet"
@@ -946,7 +943,7 @@ export default function FinanceiroPageClient() {
         />
         <KPICard
           title="Despesas"
-          subtitle="Despesas (sem impostos)"
+          subtitle="Todas as despesas (sem impostos)"
           value={`R$ ${(metrics.totalExpenses || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`}
           isLoading={metricsLoading}
           gradientVariant="rose"

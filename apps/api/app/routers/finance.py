@@ -806,23 +806,32 @@ def finance_metrics(
             FinanceExpense.expense_type == "Comissão"
         ).scalar() or 0)
 
-        # Receitas de consultoria (para breakdown)
-        # Inclui todos os tipos: líquida, bruta, antiga nomenclatura
-        total_consultoria_bruta = float(db.query(
+        consultoria_income_types = [
+            "Consultoria Líquida",
+            "Consultoria Líquida - Atendente",
+            "Consultoria Líquida - Atendente 1",
+            "Consultoria Líquida - Atendente 2",
+            "Consultoria Líquida - Balcão",
+            "Consultoria Bruta",
+            "Consultoria Bruta - Atendente",
+            "Consultoria Bruta - Atendente 1",
+            "Consultoria Bruta - Atendente 2",
+            "Consultoria Bruta - Balcão",
+            "Consultoria - Atendente",
+            "Consultoria - Balcão",
+        ]
+
+        # Receitas de consultoria (somente receitas de consultoria)
+        total_consultoria_revenue = float(db.query(
             func.coalesce(func.sum(FinanceIncome.amount), 0)
         ).filter(
             FinanceIncome.date >= start_filter,
             FinanceIncome.date <= end_filter,
-            FinanceIncome.income_type.in_([
-                "Consultoria Líquida",
-                "Consultoria - Atendente",
-                "Consultoria - Balcão",
-                "Consultoria Bruta - Atendente",
-                "Consultoria Bruta - Balcão",
-                "Consultoria Líquida - Atendente",
-                "Consultoria Líquida - Balcão"
-            ])
+            FinanceIncome.income_type.in_(consultoria_income_types)
         ).scalar() or 0)
+
+        # Receitas externas também são consultoria
+        total_consultoria_revenue += total_external_income
 
         # Receitas manuais (outras receitas, excluindo consultoria)
         total_manual_income = float(db.query(
@@ -830,18 +839,10 @@ def finance_metrics(
         ).filter(
             FinanceIncome.date >= start_filter,
             FinanceIncome.date <= end_filter,
-            ~FinanceIncome.income_type.in_([
-                "Consultoria Líquida",
-                "Consultoria - Atendente",
-                "Consultoria - Balcão",
-                "Consultoria Bruta - Atendente",
-                "Consultoria Bruta - Balcão",
-                "Consultoria Líquida - Atendente",
-                "Consultoria Líquida - Balcão"
-            ])
+            ~FinanceIncome.income_type.in_(consultoria_income_types)
         ).scalar() or 0)
 
-        # DESPESAS (sem impostos para card)
+        # Despesas (imposto não entra como despesa no KPI)
         total_expenses = float(db.query(
             func.coalesce(func.sum(FinanceExpense.amount), 0)
         ).filter(
@@ -850,14 +851,14 @@ def finance_metrics(
             FinanceExpense.expense_type != "Impostos"
         ).scalar() or 0)
 
-        # IMPOSTOS = 14% da Receita Total
+        # Impostos = 14% da receita total
         total_tax = total_revenue * 0.14
 
-        # CONSULTORIA LÍQUIDA = 86% da Receita Total
-        total_consultoria_liquida = total_revenue * 0.86
+        # Consultoria líquida total = receitas de consultoria - despesas
+        total_consultoria_liquida = total_consultoria_revenue - total_expenses
 
-        # LUCRO LÍQUIDO = Consultoria Líquida - Despesas
-        net_profit = total_consultoria_liquida - total_expenses
+        # Lucro líquido = receita total - despesas - impostos
+        net_profit = total_revenue - total_expenses - total_tax
 
         return {
             "totalRevenue": round(total_revenue, 2),
@@ -1411,8 +1412,8 @@ async def reopen_case(
     """
     Reabre um caso efetivado para ajustes nos valores.
     - Altera status de contrato_efetivado para financeiro_pendente
-    - Exclui receitas automáticas (Consultoria - Atendente/Balcão)
-    - Exclui despesa de imposto automática
+    - Exclui receitas automáticas geradas na efetivação
+    - Exclui despesas automáticas de imposto e comissão
     - Apenas Admin e Financeiro podem reabrir
     """
     try:
@@ -1439,28 +1440,61 @@ async def reopen_case(
             deleted_expenses = 0
 
             if contract:
-                # Deletar receitas usando o contract_id correto (padrão: "Contrato #123")
+                from sqlalchemy import or_  # pyright: ignore[reportMissingImports]
+
+                generated_income_types = [
+                    "Consultoria Líquida",
+                    "Consultoria Líquida - Atendente",
+                    "Consultoria Líquida - Atendente 1",
+                    "Consultoria Líquida - Atendente 2",
+                    "Consultoria Líquida - Balcão",
+                    "Consultoria Bruta",
+                    "Consultoria Bruta - Atendente",
+                    "Consultoria Bruta - Atendente 1",
+                    "Consultoria Bruta - Atendente 2",
+                    "Consultoria Bruta - Balcão",
+                    "Consultoria - Atendente",
+                    "Consultoria - Balcão",
+                ]
+
+                # Deletar receitas automáticas (formatos antigos e atuais)
                 deleted_incomes = db.query(FinanceIncome).filter(
-                    FinanceIncome.income_name.like(f"%(Contrato #{contract.id})%"),
-                    FinanceIncome.income_type.in_([
-                        "Consultoria Líquida - Atendente",  # Formato ATUAL
-                        "Consultoria Líquida - Balcão",     # Formato ATUAL
-                        "Consultoria Bruta - Atendente",    # Formato ANTIGO
-                        "Consultoria Bruta - Balcão",       # Formato ANTIGO
-                        "Consultoria - Atendente",          # Formato ANTIGO (compatibilidade)
-                        "Consultoria - Balcão"              # Formato ANTIGO (compatibilidade)
-                    ])
+                    FinanceIncome.income_type.in_(generated_income_types),
+                    or_(
+                        FinanceIncome.income_name.ilike(f"%Contrato #{contract.id}%"),
+                        FinanceIncome.income_name.ilike(f"%Caso #{case_id}%"),
+                    )
                 ).delete(synchronize_session=False)
 
-                # Deletar despesas automáticas (Impostos + Comissão)
-                deleted_expenses = db.query(FinanceExpense).filter(
-                    FinanceExpense.expense_name.like(f"%Contrato #{contract.id}%"),
+                # Deletar despesas automáticas referenciadas diretamente no contrato
+                auto_expense_ids = [
+                    expense_id
+                    for expense_id in [
+                        contract.imposto_expense_id,
+                        contract.corretor_expense_id,
+                    ]
+                    if expense_id
+                ]
+                if auto_expense_ids:
+                    deleted_expenses += db.query(FinanceExpense).filter(
+                        FinanceExpense.id.in_(auto_expense_ids)
+                    ).delete(synchronize_session=False)
+
+                # Deletar despesas automáticas por nome (fallback)
+                deleted_expenses += db.query(FinanceExpense).filter(
                     FinanceExpense.expense_type.in_(["Impostos", "Comissão"])
+                ).filter(
+                    or_(
+                        FinanceExpense.expense_name.ilike(f"%Contrato #{contract.id}%"),
+                        FinanceExpense.expense_name.ilike(f"%Caso #{case_id}%"),
+                    )
                 ).delete(synchronize_session=False)
 
                 # Marcar contrato como "em revisão" enquanto está reaberto
                 # Será reativado quando for efetivado novamente
                 contract.status = "em_revisao"
+                contract.imposto_expense_id = None
+                contract.corretor_expense_id = None
                 contract.updated_at = now_brt()
 
             # Alterar status do caso
