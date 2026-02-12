@@ -1227,15 +1227,14 @@ export function FinanceCard({
                   <div>
                     <label className="text-xs text-muted-foreground mb-1 block">Percentual (%)</label>
                     <input
-                      type="number"
-                      min="0"
-                      max="100"
-                      step="1"
+                      type="text"
+                      inputMode="numeric"
                       className="w-full px-3 py-2 rounded-md border border-input bg-background text-sm"
-                      value={percentualAtendente1}
+                      value={percentualAtendente1 === 0 ? '' : percentualAtendente1.toString()}
                       onChange={(e) => {
-                        const value = Math.min(100, Math.max(0, Number(e.target.value)));
-                        setPercentualAtendente1(value);
+                        const value = e.target.value.replace(/\D/g, '');
+                        const numValue = value === '' ? 0 : Math.min(100, Math.max(0, Number(value)));
+                        setPercentualAtendente1(numValue);
                       }}
                       placeholder="0-100%"
                     />
@@ -1265,15 +1264,14 @@ export function FinanceCard({
                   <div>
                     <label className="text-xs text-muted-foreground mb-1 block">Percentual (%)</label>
                     <input
-                      type="number"
-                      min="0"
-                      max="100"
-                      step="1"
+                      type="text"
+                      inputMode="numeric"
                       className="w-full px-3 py-2 rounded-md border border-input bg-background text-sm"
-                      value={percentualAtendente2}
+                      value={percentualAtendente2 === 0 ? '' : percentualAtendente2.toString()}
                       onChange={(e) => {
-                        const value = Math.min(100, Math.max(0, Number(e.target.value)));
-                        setPercentualAtendente2(value);
+                        const value = e.target.value.replace(/\D/g, '');
+                        const numValue = value === '' ? 0 : Math.min(100, Math.max(0, Number(value)));
+                        setPercentualAtendente2(numValue);
                       }}
                       placeholder="0-100%"
                     />
