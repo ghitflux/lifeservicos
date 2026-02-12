@@ -18,6 +18,8 @@ interface ExportData {
     receitas: number;
     despesas: number;
     saldo: number;
+    impostos?: number;
+    receitaLiquida?: number;
   };
   filters: {
     transactionType?: string;
@@ -34,6 +36,15 @@ export function exportToExcel(data: ExportData) {
   if (transactions.length === 0) {
     throw new Error("Nenhuma transação para exportar");
   }
+
+  // Calcular impostos (despesas com categorias de impostos)
+  const categoriasImpostos = ['IMPOSTOS', 'TRIBUTOS', 'TAXAS', 'ISS', 'INSS', 'IRPJ', 'CSLL', 'PIS', 'COFINS'];
+  const impostos = transactions
+    .filter(t => t.type === 'despesa' && categoriasImpostos.some(cat => t.category.toUpperCase().includes(cat)))
+    .reduce((sum, t) => sum + t.amount, 0);
+
+  // Calcular receita líquida (receitas - impostos)
+  const receitaLiquida = totals.receitas - impostos;
 
   // Criar workbook
   const wb = XLSX.utils.book_new();
@@ -126,9 +137,30 @@ export function exportToExcel(data: ExportData) {
     "",
     "",
     "",
-    "Total Receitas:",
+    "Total Receitas (Bruto):",
     totals.receitas,
   ]);
+  wsData.push([
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "(-) Impostos:",
+    impostos,
+  ]);
+  wsData.push([
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "Receita Líquida:",
+    receitaLiquida,
+  ]);
+  wsData.push([]);
   wsData.push([
     "",
     "",
@@ -139,7 +171,16 @@ export function exportToExcel(data: ExportData) {
     "Total Despesas:",
     totals.despesas,
   ]);
-  wsData.push(["", "", "", "", "", "", "Saldo:", totals.saldo]);
+  wsData.push([
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "Saldo Final:",
+    totals.saldo,
+  ]);
 
   // Criar worksheet
   const ws = XLSX.utils.aoa_to_sheet(wsData);
@@ -173,8 +214,16 @@ export function exportToExcel(data: ExportData) {
     }
   }
 
-  // Formatar totais
-  for (let row = totalsStartRow; row <= totalsStartRow + 2; row++) {
+  // Formatar totais (agora são 6 linhas: receita bruto, impostos, receita líquida, linha vazia, despesas, saldo)
+  const totalRows = [
+    totalsStartRow,     // Total Receitas (Bruto)
+    totalsStartRow + 1, // (-) Impostos
+    totalsStartRow + 2, // Receita Líquida
+    totalsStartRow + 4, // Total Despesas
+    totalsStartRow + 5, // Saldo Final
+  ];
+
+  for (const row of totalRows) {
     const cellAddress = XLSX.utils.encode_cell({ r: row, c: 7 }); // Coluna H
     if (ws[cellAddress]) {
       ws[cellAddress].t = "n";
@@ -187,9 +236,12 @@ export function exportToExcel(data: ExportData) {
   summaryData.push(["RESUMO EXECUTIVO"]);
   summaryData.push([]);
   summaryData.push(["Métrica", "Valor"]);
-  summaryData.push(["Total de Receitas", totals.receitas]);
+  summaryData.push(["Total de Receitas (Bruto)", totals.receitas]);
+  summaryData.push(["(-) Impostos", impostos]);
+  summaryData.push(["Receita Líquida", receitaLiquida]);
+  summaryData.push([]);
   summaryData.push(["Total de Despesas", totals.despesas]);
-  summaryData.push(["Saldo Líquido", totals.saldo]);
+  summaryData.push(["Saldo Final", totals.saldo]);
   summaryData.push([]);
   summaryData.push([
     "Quantidade de Transações",
@@ -199,14 +251,20 @@ export function exportToExcel(data: ExportData) {
   // Contar receitas e despesas
   const receitasCount = transactions.filter((t) => t.type === "receita").length;
   const despesasCount = transactions.filter((t) => t.type === "despesa").length;
+  const impostosCount = transactions.filter(
+    (t) => t.type === "despesa" && categoriasImpostos.some(cat => t.category.toUpperCase().includes(cat))
+  ).length;
   summaryData.push(["Quantidade de Receitas", receitasCount.toString()]);
   summaryData.push(["Quantidade de Despesas", despesasCount.toString()]);
+  summaryData.push(["Quantidade de Impostos", impostosCount.toString()]);
 
   const ws2 = XLSX.utils.aoa_to_sheet(summaryData);
-  ws2["!cols"] = [{ wch: 25 }, { wch: 20 }];
+  ws2["!cols"] = [{ wch: 30 }, { wch: 20 }];
 
   // Formatar valores monetários do resumo
-  for (let row = 3; row <= 5; row++) {
+  // Linhas: Total Receitas (3), Impostos (4), Receita Líquida (5), Total Despesas (7), Saldo (8)
+  const summaryMoneyRows = [3, 4, 5, 7, 8];
+  for (const row of summaryMoneyRows) {
     const cellAddress = XLSX.utils.encode_cell({ r: row, c: 1 });
     if (ws2[cellAddress]) {
       ws2[cellAddress].t = "n";
