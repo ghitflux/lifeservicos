@@ -35,8 +35,8 @@ export function exportToExcel(data: ExportData) {
     throw new Error("Nenhuma transação para exportar");
   }
 
-  // Calcular impostos (despesas com categorias de impostos)
-  const categoriasImpostos = ['IMPOSTOS', 'TRIBUTOS', 'TAXAS', 'ISS', 'INSS', 'IRPJ', 'IRRF', 'CSLL', 'PIS', 'COFINS'];
+  // Calcular impostos (despesas com categorias de impostos e comissões)
+  const categoriasImpostos = ['IMPOSTOS', 'TRIBUTOS', 'TAXAS', 'ISS', 'INSS', 'IRPJ', 'IRRF', 'CSLL', 'PIS', 'COFINS', 'COMISSÃO', 'COMISSAO'];
   const impostos = transactions
     .filter(t => t.type === 'despesa' && categoriasImpostos.some(cat => t.category.toUpperCase().includes(cat)))
     .reduce((sum, t) => sum + t.amount, 0);
