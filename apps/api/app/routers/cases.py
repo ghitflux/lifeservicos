@@ -1866,6 +1866,61 @@ async def bulk_delete_cases(
     }
 
 
+def _format_event_description(event_type: str, payload: dict) -> str:
+    """
+    Formata a descrição do evento em português claro para o contador/usuário.
+    """
+    try:
+        if event_type == "finance.disbursed":
+            bruta = payload.get("consultoria_bruta", 0)
+            liquida = payload.get("consultoria_liquida", 0)
+            imposto_percent = payload.get("imposto_percentual", 0)
+            imposto_valor = payload.get("imposto_valor", 0)
+            tem_corretor = payload.get("tem_corretor", False)
+            corretor_comissao = payload.get("corretor_comissao", 0)
+            amount = payload.get("amount", 0)
+            installments = payload.get("installments", 0)
+
+            description = f"Contrato Efetivado\n"
+            description += f"• Valor Total: R$ {amount:,.2f} em {installments}x\n"
+            description += f"• Consultoria Bruta: R$ {bruta:,.2f}\n"
+            description += f"• Imposto ({imposto_percent}%): R$ {imposto_valor:,.2f}\n"
+            description += f"• Consultoria Líquida: R$ {liquida:,.2f}\n"
+
+            if tem_corretor and corretor_comissao > 0:
+                description += f"• Comissão de Corretor: R$ {corretor_comissao:,.2f}\n"
+
+            return description.strip()
+
+        elif event_type == "case.assigned":
+            return "Caso Atribuído ao Atendente"
+        elif event_type == "case.reassigned":
+            return "Caso Reatribuído a Outro Atendente"
+        elif event_type == "case.released":
+            return "Caso Liberado da Fila"
+        elif event_type == "case.expired":
+            return "Prazo do SLA Expirado"
+        elif event_type == "case.returned_to_pipeline":
+            return "Caso Devolvido à Esteira"
+        elif event_type == "case.assignment_cleared":
+            return "Atribuição Removida"
+        elif event_type == "case.reopened":
+            return "Caso Reaberto para Ajustes"
+        elif event_type == "case.status_changed":
+            return "Status do Caso Alterado"
+        elif event_type == "case.finance_reversed":
+            return "Efetivação Financeira Revertida"
+        elif event_type == "case.simulations_cleared":
+            return "Simulações Removidas"
+        elif event_type == "simulation.approved":
+            return "Simulação Aprovada"
+        else:
+            # Fallback: retorna o tipo do evento
+            return event_type.replace("_", " ").replace(".", " - ").title()
+    except Exception:
+        return event_type
+
+
 @r.get("/{case_id}/events")
 def get_case_events(case_id: int, user=Depends(get_current_user)):
     """Retorna o histórico de eventos."""
@@ -1901,6 +1956,7 @@ def get_case_events(case_id: int, user=Depends(get_current_user)):
                 {
                     "id": e.id,
                     "type": e.type,
+                    "description": _format_event_description(e.type, e.payload or {}),
                     "payload": e.payload or {},
                     "created_at": (
                         e.created_at.isoformat() if e.created_at else None
