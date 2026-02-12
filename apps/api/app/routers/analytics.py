@@ -376,16 +376,35 @@ def _get_kpis_cached(start_key: str, end_key: str) -> Dict[str, Any]:
             )
             .scalar()
         )
+
+        # Impostos lançados no período (contabilizados como receita)
+        total_tax_mtd = (
+            db.query(func.sum(FinanceExpense.amount))
+            .filter(
+                FinanceExpense.date >= mtd_start,
+                FinanceExpense.date < end,
+                FinanceExpense.expense_type == "Impostos"
+            )
+            .scalar()
+        )
+
+        # Despesas operacionais (excluindo impostos)
         finance_expense_mtd = (
             db.query(func.sum(FinanceExpense.amount))
             .filter(
                 FinanceExpense.date >= mtd_start,
                 FinanceExpense.date < end,
+                FinanceExpense.expense_type != "Impostos"
             )
             .scalar()
         )
-        resultado_mtd_value = _to_float(finance_income_mtd) - _to_float(
-            finance_expense_mtd
+
+        # Regra de caixa: imposto provisionado entra como receita no mês do lançamento
+        # Resultado = Receitas + Impostos - Despesas Operacionais
+        resultado_mtd_value = (
+            _to_float(finance_income_mtd) +
+            _to_float(total_tax_mtd) -
+            _to_float(finance_expense_mtd)
         )
 
         # Novos KPIs mais precisos
@@ -525,12 +544,14 @@ def _get_series_cached(start_key: str, end_key: str, bucket: str) -> Dict[str, A
         ):
             register(period, "finance_receita", total, as_float=True)
 
+        # Despesas operacionais (excluindo impostos)
         period_expense = func.date_trunc(bucket, FinanceExpense.date).label("period")
         for period, total in (
             db.query(period_expense, func.coalesce(func.sum(FinanceExpense.amount), 0))
             .filter(
                 FinanceExpense.date >= start,
                 FinanceExpense.date < end,
+                FinanceExpense.expense_type != "Impostos"
             )
             .group_by(period_expense)
             .order_by(period_expense)
@@ -551,7 +572,7 @@ def _get_series_cached(start_key: str, end_key: str, bucket: str) -> Dict[str, A
         ):
             register(period, "finance_comissoes", total, as_float=True)
 
-        # Impostos específicos
+        # Impostos específicos (contabilizados como receita)
         period_taxes = func.date_trunc(bucket, FinanceExpense.date).label("period")
         for period, total in (
             db.query(period_taxes, func.coalesce(func.sum(FinanceExpense.amount), 0))
@@ -565,11 +586,14 @@ def _get_series_cached(start_key: str, end_key: str, bucket: str) -> Dict[str, A
         ):
             register(period, "finance_impostos", total, as_float=True)
 
+    # Regra de caixa: imposto provisionado entra como receita no mês do lançamento
     for entry in buckets.values():
         receita = entry.get("finance_receita", 0.0)
         despesas = entry.get("finance_despesas", 0.0)
+        impostos = entry.get("finance_impostos", 0.0)
+        # Resultado = Receitas + Impostos - Despesas Operacionais
         entry["finance_resultado"] = round(
-            _to_float(receita) - _to_float(despesas), 2
+            _to_float(receita) + _to_float(impostos) - _to_float(despesas), 2
         )
 
     ordered = sorted(buckets.values(), key=lambda item: item["date"])

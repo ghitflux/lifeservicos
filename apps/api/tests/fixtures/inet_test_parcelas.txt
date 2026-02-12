@@ -1,0 +1,18 @@
+Governo do Estado de Pernambuco
+Empresa de Tecnologia da Informação do Estado de Pernambuco - ETC
+Relatório dos Lançamentos da Folha de Pagamento - Retorno iNETConsig
+Entidade: 1042-BANCO SANTANDER S.A                                            Referência: 01/2025   Data da Geração: 24/01/2025
+
+STATUS MATRICULA NOME                                      CARGO                                 FIN  ORGAO LANC TOTAL PAGO VALOR   ORGAO_PGTO CPF
+======================================================================================================================================================================
+  1    000550-9  JOAO DA SILVA SANTOS                     3-AGENTE SUPERIOR DE SERVICO          6490 001   088   60    45   458,04  001        12345678901
+  1    000123-4  MARIA DOS SANTOS OLIVEIRA                2-TECNICO ADMINISTRATIVO              6490 001   088   24    24   350,00  001        98765432100
+  1    000789-X  JOSE CARLOS PEREIRA                      1-ANALISTA DE SISTEMAS SENIOR         6491 002   088   120   90   890,50  002        11122233344
+  2    000456-Y  ANA PAULA RODRIGUES                      4-AUXILIAR ADMINISTRATIVO             6490 001   088   36    0    120,00  001        55566677788
+  1    000999-Z  CARLOS ALBERTO LIMA                      2-COORDENADOR ADMINISTRATIVO          6492 003   088   48    12   675,30  003        99988877766
+
+Órgão Pagamento: 001-SECRETARIA DE ADMINISTRACAO - 3 Lançamento(s)
+Órgão Pagamento: 002-SECRETARIA DE EDUCACAO - 1 Lançamento(s)
+Órgão Pagamento: 003-SECRETARIA DE SAUDE - 1 Lançamento(s)
+
+Total de Lançamentos: 5
