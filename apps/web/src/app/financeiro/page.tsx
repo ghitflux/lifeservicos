@@ -47,6 +47,8 @@ import {
 import { formatCurrency } from "@/lib/utils/currency";
 import React, { useState, useMemo } from "react";
 import { toast } from "sonner";
+import { ExportModal, ExportFilters } from "@/components/ExportModal";
+import { exportToExcel } from "@/lib/utils/exportExcel";
 import { api } from "@/lib/api";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -154,6 +156,9 @@ export default function Page() {
   const [transactionType, setTransactionType] = useState<string>("");
   const [transactionSearchTerm, setTransactionSearchTerm] = useState<string>("");
 
+  // Modal de exportação
+  const [showExportModal, setShowExportModal] = useState(false);
+
   // Período
   const [startDate, setStartDate] = useState<string>(() => {
     const now = new Date();
@@ -201,6 +206,30 @@ export default function Page() {
   // SEMPRE usar totais do backend - representa TODAS as transações do período
   const totals = backendTotals;
 
+  // Calcular total de receitas de consultoria
+  const totalConsultoria = useMemo(() => {
+    return transactions
+      .filter((t: any) => t.type === "receita" && t.category?.toLowerCase().includes("consultoria"))
+      .reduce((sum: number, t: any) => sum + (t.amount || 0), 0);
+  }, [transactions]);
+
+  // Calcular total de impostos (da tabela de transações)
+  const totalImpostos = useMemo(() => {
+    return transactions
+      .filter((t: any) => t.type === "despesa" && t.category?.toLowerCase().includes("imposto"))
+      .reduce((sum: number, t: any) => sum + (t.amount || 0), 0);
+  }, [transactions]);
+
+  // Calcular total de despesas (exceto impostos)
+  const totalDespesas = useMemo(() => {
+    return transactions
+      .filter((t: any) => t.type === "despesa" && !t.category?.toLowerCase().includes("imposto"))
+      .reduce((sum: number, t: any) => sum + (t.amount || 0), 0);
+  }, [transactions]);
+
+  // Calcular lucro líquido (Consultoria Total - Impostos - Despesas)
+  const lucroLiquido = totalConsultoria - totalImpostos - totalDespesas;
+
   // Filtrar transações por busca (nome ou CPF)
   const filteredTransactions = transactions.filter((transaction: any) => {
     if (!transactionSearchTerm) return true;
@@ -230,42 +259,82 @@ export default function Page() {
     return "Pendente";
   };
 
-  // Export CSV
-  const exportToCSV = () => {
-    if (transactions.length === 0) {
-      toast.error("Nenhuma transação para exportar");
-      return;
+  // Export Excel
+  const handleExport = (filters: ExportFilters) => {
+    try {
+      // Filtrar transações baseado nos filtros selecionados
+      let filteredData = [...transactions];
+
+      // Filtrar por tipo
+      if (filters.transactionType !== "all") {
+        filteredData = filteredData.filter((t: any) => t.type === filters.transactionType);
+      }
+
+      // Filtrar por período (comparar apenas a data, ignorando hora)
+      if (filters.startDate) {
+        filteredData = filteredData.filter((t: any) => {
+          const transactionDate = new Date(t.date).toISOString().split('T')[0];
+          return transactionDate >= filters.startDate;
+        });
+      }
+      if (filters.endDate) {
+        filteredData = filteredData.filter((t: any) => {
+          const transactionDate = new Date(t.date).toISOString().split('T')[0];
+          return transactionDate <= filters.endDate;
+        });
+      }
+
+      // Filtrar por atendente
+      if (filters.agentId) {
+        const selectedAgent = users.find((u: any) => u.id === filters.agentId);
+        filteredData = filteredData.filter((t: any) => t.agent_name === selectedAgent?.name);
+      }
+
+      // Filtrar por categoria
+      if (filters.category) {
+        filteredData = filteredData.filter((t: any) => t.category === filters.category);
+      }
+
+      if (filteredData.length === 0) {
+        toast.error("Nenhuma transação encontrada com os filtros selecionados");
+        return;
+      }
+
+      // Calcular totais dos dados filtrados
+      const filteredReceitas = filteredData
+        .filter((t: any) => t.type === "receita")
+        .reduce((sum: number, t: any) => sum + t.amount, 0);
+
+      const filteredDespesas = filteredData
+        .filter((t: any) => t.type === "despesa")
+        .reduce((sum: number, t: any) => sum + t.amount, 0);
+
+      const filteredSaldo = filteredReceitas - filteredDespesas;
+
+      // Preparar dados para exportação
+      const exportData = {
+        transactions: filteredData,
+        totals: {
+          receitas: filteredReceitas,
+          despesas: filteredDespesas,
+          saldo: filteredSaldo,
+        },
+        filters: {
+          transactionType: filters.transactionType === "all" ? "Todas" : filters.transactionType === "receita" ? "Receitas" : "Despesas",
+          startDate: filters.startDate,
+          endDate: filters.endDate,
+          agentName: filters.agentId ? users.find((u: any) => u.id === filters.agentId)?.name : undefined,
+          category: filters.category || undefined,
+        },
+      };
+
+      // Exportar
+      const filename = exportToExcel(exportData);
+      toast.success(`Relatório exportado: ${filename}`);
+    } catch (error: any) {
+      console.error("Erro ao exportar:", error);
+      toast.error(error.message || "Erro ao exportar relatório");
     }
-    // ✅ ATUALIZADO: Incluir coluna "Nome (Despesa/Receita)" e manter ordem da tabela
-    const headers = ["Data", "Tipo", "Nome (Despesa/Receita)", "Cliente", "CPF", "Atendente", "Categoria", "Valor"];
-    const rows = transactions.map((t: any) => [
-      new Date(t.date).toLocaleDateString("pt-BR"),
-      t.type === "receita" ? "Receita" : "Despesa",
-      t.name || "-", // ✅ NOVO: Nome da Despesa/Receita
-      t.client_name || "-",
-      t.client_cpf ? t.client_cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4") : "-",
-      t.agent_name || "-",
-      t.category,
-      `R$ ${t.amount.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`
-    ]);
-    // ✅ ATUALIZADO: Adicionar campo vazio para a nova coluna "Nome (Despesa/Receita)"
-    rows.push(["", "", "", "", "", "", "", "Total Receitas", `R$ ${totals.receitas.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`]);
-    rows.push(["", "", "", "", "", "", "", "Total Despesas", `R$ ${totals.despesas.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`]);
-    rows.push(["", "", "", "", "", "", "", "Saldo", `R$ ${totals.saldo.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`]);
-
-    const csvContent = [headers.join(","), ...rows.map((r: string[]) => r.map(c => `"${c}"`).join(","))].join("\n");
-    const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
-    const link = document.createElement("a");
-    const url = URL.createObjectURL(blob);
-    link.setAttribute("href", url);
-    const dateRange = startDate && endDate ? `${startDate}_${endDate}` : "completo";
-    link.setAttribute("download", `receitas-despesas-${dateRange}.csv`);
-    link.style.visibility = "hidden";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-
-    toast.success("CSV exportado com sucesso!");
   };
 
   // Métricas
@@ -321,14 +390,18 @@ export default function Page() {
   };
 
   const trends = {
-    receita: calculateTrend(metrics.totalRevenue || 0, previousMetrics.totalRevenue || 0),
+    receita: calculateTrend((metrics.totalRevenue || 0) + (metrics.totalManualTaxes || 0), (previousMetrics.totalRevenue || 0) + (previousMetrics.totalManualTaxes || 0)),
     consultoria: calculateTrend(metrics.totalConsultoriaLiq || 0, previousMetrics.totalConsultoriaLiq || 0),
-    lucro: calculateTrend(metrics.netProfit || 0, previousMetrics.netProfit || 0),
-    despesas: calculateTrend(
-      (metrics.totalExpenses || 0) + (metrics.totalTax || 0) - (metrics.totalManualTaxes || 0),
-      (previousMetrics.totalExpenses || 0) + (previousMetrics.totalTax || 0) - (previousMetrics.totalManualTaxes || 0)
+    lucro: calculateTrend(
+      lucroLiquido,
+      // Aproximação para período anterior: (ConsultoriaLiq/0.86) - Impostos - Despesas
+      ((previousMetrics.totalConsultoriaLiq || 0) / 0.86) - (previousMetrics.totalManualTaxes || 0) - (previousMetrics.totalExpenses || 0)
     ),
-    imposto: calculateTrend(metrics.totalTax || 0, previousMetrics.totalTax || 0), // Agora usa apenas impostos manuais
+    despesas: calculateTrend(
+      totalDespesas,
+      previousMetrics.totalExpenses || 0
+    ),
+    imposto: calculateTrend(metrics.totalManualTaxes || 0, previousMetrics.totalManualTaxes || 0), // Impostos da tabela de transações
     comissoes: calculateTrend(metrics.totalCommissions || 0, previousMetrics.totalCommissions || 0)
   };
 
@@ -940,27 +1013,27 @@ export default function Page() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
         <KPICard
           title="Receita Total"
-          subtitle="Todas Receitas"
-          value={`R$ ${(metrics.totalRevenue || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`}
-          isLoading={metricsLoading}
+          subtitle="Todas Receitas + Impostos"
+          value={`R$ ${((metrics.totalRevenue || 0) + (totalImpostos || 0)).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`}
+          isLoading={metricsLoading || loadingTransactions}
           gradientVariant="emerald"
           trend={trends.receita}
           miniChart={<MiniAreaChart data={getTrendChartData.receita} dataKey="value" xKey="day" stroke="#10b981" height={60} valueType="currency" />}
         />
         <KPICard
-          title="Consultoria Líquida Total"
-          subtitle="86% da Receita Total"
-          value={`R$ ${(metrics.totalConsultoriaLiq || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`}
-          isLoading={metricsLoading}
+          title="Consultoria Total"
+          subtitle="Todas Receitas de Consultoria"
+          value={`R$ ${totalConsultoria.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`}
+          isLoading={metricsLoading || loadingTransactions}
           gradientVariant="cyan"
           trend={trends.consultoria}
           miniChart={<MiniAreaChart data={getTrendChartData.consultoria} dataKey="value" xKey="day" stroke="#06b6d4" height={60} valueType="currency" />}
         />
         <KPICard
           title="Lucro Líquido"
-          subtitle="Consultoria Líquida - Despesas"
-          value={`R$ ${(metrics.netProfit || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`}
-          isLoading={metricsLoading}
+          subtitle="Consultoria - Impostos - Despesas"
+          value={`R$ ${lucroLiquido.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`}
+          isLoading={metricsLoading || loadingTransactions}
           gradientVariant="violet"
           trend={trends.lucro}
           miniChart={<MiniAreaChart data={getTrendChartData.lucro} dataKey="value" xKey="day" stroke="#8b5cf6" height={60} valueType="currency" />}
@@ -968,17 +1041,17 @@ export default function Page() {
         <KPICard
           title="Despesas"
           subtitle="Despesas (sem impostos)"
-          value={`R$ ${(metrics.totalExpenses || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`}
-          isLoading={metricsLoading}
+          value={`R$ ${totalDespesas.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`}
+          isLoading={metricsLoading || loadingTransactions}
           gradientVariant="rose"
           trend={trends.despesas}
           miniChart={<MiniAreaChart data={getTrendChartData.despesas} dataKey="value" xKey="day" stroke="#f43f5e" height={60} valueType="currency" />}
         />
         <KPICard
           title="Impostos"
-          subtitle="14% da Receita Total"
-          value={`R$ ${(metrics.totalTax || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`}
-          isLoading={metricsLoading}
+          subtitle="Impostos da Tabela"
+          value={`R$ ${(totalImpostos || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`}
+          isLoading={metricsLoading || loadingTransactions}
           gradientVariant="amber"
           trend={trends.imposto}
           miniChart={<MiniAreaChart data={getTrendChartData.imposto} dataKey="value" xKey="day" stroke="#f59e0b" height={60} valueType="currency" />}
@@ -1632,9 +1705,9 @@ export default function Page() {
                 <RefreshCw className="h-4 w-4" />
                 Atualizar
               </Button>
-              <Button size="sm" variant="outline" onClick={exportToCSV} className="gap-2">
+              <Button size="sm" variant="outline" onClick={() => setShowExportModal(true)} className="gap-2">
                 <Download className="h-4 w-4" />
-                Exportar CSV
+                Exportar Excel
               </Button>
               <Button
                 onClick={() => {
@@ -2037,6 +2110,19 @@ export default function Page() {
           </div>
         </div>
       )}
+
+      {/* Modal de Exportação */}
+      <ExportModal
+        isOpen={showExportModal}
+        onClose={() => setShowExportModal(false)}
+        onExport={handleExport}
+        availableAgents={users
+          .filter((u: any) => u.role === "atendente")
+          .map((u: any) => ({ id: u.id, name: u.name }))}
+        availableCategories={Array.from(
+          new Set(transactions.map((t: any) => t.category))
+        )}
+      />
     </div>
   );
 }
