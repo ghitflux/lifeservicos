@@ -196,15 +196,18 @@ export default function RankingsPage() {
   const tableData = useMemo(() => {
     if (!rankingData?.items) return [];
 
-    // Filtrar apenas atendentes e excluir usuários específicos
+    // Filtrar apenas atendentes + Balcão, excluindo usuários internos/sistema
     const filteredItems = rankingData.items.filter((agent: any) => {
       const nameLower = agent.name?.toLowerCase() || "";
 
-      // Lista de usuários/padrões a excluir (tanto por nome exato quanto por padrão)
+      // Balcão sempre aparece no ranking
+      if (nameLower === "balcão" || nameLower === "balcao") {
+        return true;
+      }
+
+      // Lista de usuários/padrões a excluir
       const excludedPatterns = [
         "peltson",
-        "balcão",
-        "balcao",
         "administrador",
         "admin",
         "calculista",
@@ -229,7 +232,7 @@ export default function RankingsPage() {
         return false;
       }
 
-      return true; // Passou em todos os filtros
+      return true;
     });
 
     return filteredItems.map((agent: any, idx: number) => ({

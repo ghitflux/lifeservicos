@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
-from sqlalchemy import func, case
+from sqlalchemy import func, case, or_
 from ..db import get_db
 from ..rbac import require_roles
 from ..models import User, Case, Contract, Client
@@ -202,8 +202,10 @@ def ranking_agents(
 
     start, end, prev_start, prev_end = _parse_range(from_, to)
 
-    # Buscar APENAS usuários com role "atendente"
-    all_users_q = db.query(User).filter(User.role == "atendente")
+    # Buscar usuários com role "atendente" + Balcão (role admin, aparece no ranking)
+    all_users_q = db.query(User).filter(
+        or_(User.role == "atendente", User.name == "Balcão")
+    )
     if agent_id:
         all_users_q = all_users_q.filter(User.id == agent_id)
 
@@ -436,8 +438,10 @@ def get_targets(
     Se não existir, retornar vazio (frontend trata como 0).
     """
 
-    # Buscar apenas atendentes
-    rows = db.query(User).filter(User.role == "atendente").all()
+    # Buscar atendentes + Balcão
+    rows = db.query(User).filter(
+        or_(User.role == "atendente", User.name == "Balcão")
+    ).all()
     items = []
     for u in rows:
         meta = {}
@@ -691,9 +695,11 @@ def export_csv(
             "atingimento_contratos", "atingimento_consultoria"
         ])
 
-        # metas por usuário - apenas atendentes
+        # metas por usuário - atendentes + Balcão
         user_targets: dict[int, dict] = {}
-        for u in db.query(User).filter(User.role == "atendente").all():
+        for u in db.query(User).filter(
+            or_(User.role == "atendente", User.name == "Balcão")
+        ).all():
             meta = {}
             if hasattr(u, "settings") and isinstance(
                 getattr(u, "settings"), dict
@@ -836,8 +842,8 @@ def get_podium(
         .join(Case, Case.id == Contract.case_id, isouter=True)
         .join(User, User.id == owner_user_id)
         .filter(Contract.status == "ativo")
-        .filter(User.role == "atendente")
-    )  # Filtrar apenas atendentes ANTES do limit
+        .filter(or_(User.role == "atendente", User.name == "Balcão"))
+    )  # Filtrar atendentes + Balcão ANTES do limit
 
     if from_ and to:
         contracts_query = contracts_query.filter(
@@ -867,9 +873,9 @@ def get_podium(
     # Adicionar consultoria líquida para usuários SEM contratos (mas com receitas)
     for user_id, consultoria_liq in consultoria_liquida_map.items():
         if user_id not in podium_map:
-            # Verificar se é atendente
+            # Verificar se é atendente ou Balcão
             user_obj = db.get(User, user_id)
-            if user_obj and user_obj.role == "atendente":
+            if user_obj and (user_obj.role == "atendente" or user_obj.name == "Balcão"):
                 podium_map[user_id] = {"contracts": 0, "consultoria_liq": consultoria_liq}
 
     # Ordenar por consultoria líquida
@@ -886,7 +892,7 @@ def get_podium(
         if position > 3:  # Limitar a 3 posições
             break
         user_obj = db.get(User, user_id)
-        if user_obj and user_obj.role == "atendente":  # Filtrar apenas atendentes
+        if user_obj and (user_obj.role == "atendente" or user_obj.name == "Balcão"):  # Atendentes + Balcão
             podium.append({
                 "position": position,
                 "user_id": user_id,
@@ -1321,9 +1327,11 @@ def get_rankings_kpis(
     top_performer = None
     max_consultoria = 0
 
-    # Buscar metas personalizadas dos usuários - apenas atendentes
+    # Buscar metas personalizadas dos usuários - atendentes + Balcão
     user_targets = {}
-    for u in db.query(User).filter(User.role == "atendente").all():
+    for u in db.query(User).filter(
+        or_(User.role == "atendente", User.name == "Balcão")
+    ).all():
         meta = {}
         if hasattr(u, "settings") and isinstance(u.settings, dict):
             meta = (u.settings or {}).get("targets", {})
