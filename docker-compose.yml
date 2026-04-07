@@ -1,6 +1,7 @@
 services:
   db:
     image: postgres:16
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -8,13 +9,22 @@ services:
     volumes:
       - db_data:/var/lib/postgresql/data
     ports: ["5433:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
     networks:
       - life-net
 
   api:
     build: ./apps/api
+    restart: unless-stopped
     env_file: .env
-    depends_on: [db]
+    depends_on:
+      db:
+        condition: service_healthy
     volumes:
       - ./apps/api:/app
       - uploads:/app/uploads
@@ -27,6 +37,8 @@ services:
       - COOKIE_DOMAIN=${COOKIE_DOMAIN:-}
       - TZ=America/Sao_Paulo
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    labels:
+      - autoheal=true
     networks:
       - life-net
 
@@ -34,12 +46,17 @@ services:
     build:
       context: .
       dockerfile: ./apps/web/Dockerfile.prod
+    restart: unless-stopped
     env_file: .env
-    depends_on: [api]
+    depends_on:
+      api:
+        condition: service_healthy
     ports: ["3000:3000"]
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8000
       - NODE_ENV=production
+    labels:
+      - autoheal=true
     networks:
       - life-net
 
@@ -60,6 +77,17 @@ services:
     tty: true
     networks:
       - life-net
+
+  autoheal:
+    image: willfarrell/autoheal
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - AUTOHEAL_CONTAINER_LABEL=autoheal
+      - AUTOHEAL_INTERVAL=30
+      - AUTOHEAL_START_PERIOD=60
+      - AUTOHEAL_DEFAULT_STOP_TIMEOUT=10
 
 volumes:
   db_data:
