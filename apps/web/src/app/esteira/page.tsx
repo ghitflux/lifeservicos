@@ -1,6 +1,6 @@
 "use client";
 import { useLiveCaseEvents } from "@/lib/ws";
-import { useState, useEffect, Suspense, useMemo } from "react";
+import { useState, useEffect, useRef, Suspense, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button, Badge, EsteiraCard, Tabs, TabsContent, TabsList, TabsTrigger, CaseSkeleton, KPICard, CasesTable, Pagination } from "@lifecalling/ui";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -9,10 +9,12 @@ import { useMyStats } from "@/lib/hooks";
 import { useAuth } from "@/lib/auth";
 import { buildCasesQuery } from "@/lib/query";
 import { toast } from "sonner";
-import { Search, X, Building2, Activity, CheckCircle, AlertCircle, TrendingUp, DollarSign, Target, User, Phone, Briefcase, Hash, Calendar, CreditCard, MapPin, Copy, ChevronLeft, ChevronRight, Download, ShieldOff } from "lucide-react";
+import { Search, X, Building2, Activity, CheckCircle, AlertCircle, TrendingUp, DollarSign, Target, User, Phone, Briefcase, Hash, Calendar, CreditCard, MapPin, Copy, ChevronLeft, ChevronRight, Download, ChevronDown } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+
+type SiapeMode = 'all' | 'only' | 'exclude';
 
 interface Case {
   id: number;
@@ -32,62 +34,196 @@ interface Case {
   valor_mensalidade?: number;
 }
 
+// Combobox de banco com autocomplete
+function BancoCombobox({
+  value,
+  onSelect,
+  bancos,
+}: {
+  value: string | null;
+  onSelect: (v: string | null) => void;
+  bancos: Array<{ value: string; label: string; count: number }>;
+}) {
+  const [inputText, setInputText] = useState("");
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Sincronizar label quando valor externo muda
+  useEffect(() => {
+    if (value) {
+      const found = bancos.find((b) => b.value === value);
+      setInputText(found ? found.label : value);
+    } else {
+      setInputText("");
+    }
+  }, [value, bancos]);
+
+  // Fechar ao clicar fora
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+        // Se digitou mas não selecionou, restaurar label do valor atual
+        if (value) {
+          const found = bancos.find((b) => b.value === value);
+          setInputText(found ? found.label : value);
+        } else {
+          setInputText("");
+        }
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [value, bancos]);
+
+  const filtered = useMemo(() => {
+    if (!inputText || (value && bancos.find((b) => b.value === value)?.label === inputText)) {
+      return bancos;
+    }
+    return bancos.filter((b) =>
+      b.label.toLowerCase().includes(inputText.toLowerCase())
+    );
+  }, [inputText, bancos, value]);
+
+  return (
+    <div ref={containerRef} className="relative">
+      <div className="relative">
+        <input
+          value={inputText}
+          onChange={(e) => {
+            setInputText(e.target.value);
+            onSelect(null); // limpa seleção ao digitar
+            setOpen(true);
+          }}
+          onFocus={() => setOpen(true)}
+          placeholder="Todos os bancos"
+          className="h-10 w-full px-3 py-2 pr-16 rounded-lg border border-border bg-card text-sm text-foreground transition-colors hover:border-primary focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+        />
+        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+          {value && (
+            <button
+              type="button"
+              onClick={() => { onSelect(null); setInputText(""); setOpen(false); }}
+              className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+          <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
+        </div>
+      </div>
+
+      {open && (
+        <div className="absolute z-50 w-full mt-1 bg-card border border-border rounded-lg shadow-lg max-h-56 overflow-auto">
+          <div
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => { onSelect(null); setInputText(""); setOpen(false); }}
+            className="px-3 py-2 text-sm text-muted-foreground hover:bg-muted cursor-pointer"
+          >
+            Todos os bancos
+          </div>
+          {filtered.length === 0 && (
+            <div className="px-3 py-2 text-sm text-muted-foreground">Nenhum banco encontrado</div>
+          )}
+          {filtered.map((banco) => (
+            <div
+              key={banco.value}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => { onSelect(banco.value); setInputText(banco.label); setOpen(false); }}
+              className={`px-3 py-2 text-sm cursor-pointer hover:bg-muted flex items-center justify-between gap-2 ${value === banco.value ? 'bg-primary/10 text-primary font-medium' : 'text-foreground'}`}
+            >
+              <span>{banco.label}</span>
+              <span className="text-xs text-muted-foreground shrink-0">({banco.count})</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Filtro SIAPE em 3 estados
+function SiapeFilter({ value, onChange }: { value: SiapeMode; onChange: (v: SiapeMode) => void }) {
+  const opts: { value: SiapeMode; label: string }[] = [
+    { value: 'all', label: 'Todos' },
+    { value: 'only', label: 'Apenas' },
+    { value: 'exclude', label: 'Excluir' },
+  ];
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+        SIAPE
+      </label>
+      <div className="flex h-10 items-center rounded-lg border border-border bg-card overflow-hidden">
+        {opts.map((opt, i) => (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => onChange(opt.value)}
+            className={`flex-1 h-full text-xs font-medium transition-colors ${
+              i > 0 ? 'border-l border-border' : ''
+            } ${
+              value === opt.value
+                ? 'bg-primary text-primary-foreground'
+                : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+            }`}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function EsteiraPageContent() {
   useLiveCaseEvents();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { user } = useAuth();  // Adicionar hook de autenticação
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState("global");
 
-  // Verificar se é admin ou supervisor
   const isAdminOrSupervisor = user?.role === 'super_admin' || user?.role === 'admin' || user?.role === 'supervisor';
 
-  // Estados de paginação e filtro (simplificados)
+  // Estados — Global
   const [globalPage, setGlobalPage] = useState(1);
   const [globalPageSize, setGlobalPageSize] = useState(20);
   const [globalSearchTerm, setGlobalSearchTerm] = useState("");
   const [globalSelectedBanco, setGlobalSelectedBanco] = useState<string | null>(null);
   const [globalSelectedCargo, setGlobalSelectedCargo] = useState<string | null>(null);
   const [globalSelectedStatus, setGlobalSelectedStatus] = useState<string | null>(null);
-  const [globalExcludeSiape, setGlobalExcludeSiape] = useState(false);
+  const [globalSiapeMode, setGlobalSiapeMode] = useState<SiapeMode>('all');
   const [exportingCsv, setExportingCsv] = useState(false);
 
+  // Estados — Meus Atendimentos
   const [myPage, setMyPage] = useState(1);
   const [myPageSize, setMyPageSize] = useState(20);
   const [mySearchTerm, setMySearchTerm] = useState("");
   const [mySelectedBanco, setMySelectedBanco] = useState<string | null>(null);
   const [mySelectedCargo, setMySelectedCargo] = useState<string | null>(null);
   const [mySelectedStatus, setMySelectedStatus] = useState<string | null>(null);
-  const [myExcludeSiape, setMyExcludeSiape] = useState(false);
+  const [mySiapeMode, setMySiapeMode] = useState<SiapeMode>('all');
 
-  // Estados para a tab Esteira
+  // Estados — Esteira
   const [esteiraCurrentIndex, setEsteiraCurrentIndex] = useState(0);
   const [esteiraSelectedBanco, setEsteiraSelectedBanco] = useState<string | null>(null);
   const [esteiraSelectedCargo, setEsteiraSelectedCargo] = useState<string | null>(null);
   const [esteiraSelectedStatus, setEsteiraSelectedStatus] = useState<string | null>(null);
   const [esteiraSearchTerm, setEsteiraSearchTerm] = useState("");
 
-  // Busca em tempo real (como módulo Clientes)
-
   const queryClient = useQueryClient();
 
   // Reset página quando filtros mudam
   useEffect(() => {
     setGlobalPage(1);
-  }, [globalSelectedBanco, globalSelectedCargo, globalSelectedStatus, globalSearchTerm, globalExcludeSiape]);
-
-
-  useEffect(() => {
-    setMyPage(1);
-  }, [mySelectedBanco, mySelectedCargo, mySelectedStatus, mySearchTerm, myExcludeSiape]);
-
-  useEffect(() => {
-    setGlobalPage(1);
-  }, [globalPageSize]);
+  }, [globalSelectedBanco, globalSelectedCargo, globalSelectedStatus, globalSearchTerm, globalSiapeMode]);
 
   useEffect(() => {
     setMyPage(1);
-  }, [myPageSize]);
+  }, [mySelectedBanco, mySelectedCargo, mySelectedStatus, mySearchTerm, mySiapeMode]);
+
+  useEffect(() => { setGlobalPage(1); }, [globalPageSize]);
+  useEffect(() => { setMyPage(1); }, [myPageSize]);
 
   // Restaurar estado da esteira quando a página carregar
   useEffect(() => {
@@ -96,87 +232,70 @@ function EsteiraPageContent() {
     const savedStatus = searchParams.get('status');
     const savedSearch = searchParams.get('search');
 
-    console.log('Parâmetros da URL:', { savedPage, savedTab, savedStatus, savedSearch });
-
-    // Só alterar a aba se houver parâmetro explícito na URL
     if (savedTab && (savedTab === 'mine' || savedTab === 'global')) {
       setActiveTab(savedTab);
     }
-    // Se não houver parâmetro de aba, manter o padrão (global)
 
     if (savedPage) {
       const pageNum = parseInt(savedPage);
-      const tabToUse = savedTab || 'global'; // Usar global como padrão se não houver tab
-      console.log('Restaurando página:', { pageNum, tabToUse });
-      
-      if (tabToUse === 'mine') {
-        setMyPage(pageNum);
-      } else {
-        setGlobalPage(pageNum);
-      }
+      const tabToUse = savedTab || 'global';
+      if (tabToUse === 'mine') setMyPage(pageNum);
+      else setGlobalPage(pageNum);
     }
 
     if (savedStatus) {
       const tabToUse = savedTab || 'global';
-      if (tabToUse === 'mine') {
-        setMySelectedStatus([savedStatus]);
-      } else {
-        setGlobalSelectedStatus([savedStatus]);
-      }
+      if (tabToUse === 'mine') setMySelectedStatus([savedStatus] as any);
+      else setGlobalSelectedStatus([savedStatus] as any);
     }
 
     if (savedSearch) {
       const tabToUse = savedTab || 'global';
-      if (tabToUse === 'mine') {
-        setMySearchTerm(savedSearch);
-      } else {
-        setGlobalSearchTerm(savedSearch);
-      }
+      if (tabToUse === 'mine') setMySearchTerm(savedSearch);
+      else setGlobalSearchTerm(savedSearch);
     }
   }, [searchParams]);
 
-  // Query para mÃ©tricas do usuÃ¡rio
-  const { data: myStats, isLoading: loadingStats } = useMyStats();
+  const { data: myStats } = useMyStats();
 
-  // Query para listar atendimentos globais
+  // Helpers para resolver banco/siape no query
+  const resolveGlobalBancoParams = () => {
+    if (globalSiapeMode === 'only') return { banco: 'SIAPE', exclude_siape: undefined };
+    if (globalSiapeMode === 'exclude') return { banco: globalSelectedBanco || undefined, exclude_siape: true };
+    return { banco: globalSelectedBanco || undefined, exclude_siape: undefined };
+  };
+
+  const resolveMyBancoParams = () => {
+    if (mySiapeMode === 'only') return { banco: 'SIAPE', exclude_siape: undefined };
+    if (mySiapeMode === 'exclude') return { banco: mySelectedBanco || undefined, exclude_siape: true };
+    return { banco: mySelectedBanco || undefined, exclude_siape: undefined };
+  };
+
+  // Query — Global
   const { data: globalData, isLoading: loadingGlobal, error: errorGlobal } = useQuery({
     queryKey: [
-      "cases",
-      "global",
-      globalPage,
-      globalPageSize,
-      globalSelectedBanco,
-      globalSelectedCargo,
-      globalSelectedStatus,
-      globalSearchTerm,
-      globalExcludeSiape,
+      "cases", "global",
+      globalPage, globalPageSize,
+      globalSelectedBanco, globalSelectedCargo, globalSelectedStatus,
+      globalSearchTerm, globalSiapeMode,
     ],
     queryFn: async () => {
       const isManager = ["super_admin", "admin", "supervisor"].includes(user?.role ?? "");
-
-      const orderBy = globalSelectedBanco ? `financiamentos_banco_desc:${globalSelectedBanco}` : "financiamentos_desc";
+      const { banco, exclude_siape } = resolveGlobalBancoParams();
+      const orderBy = banco ? `financiamentos_banco_desc:${banco}` : "financiamentos_desc";
 
       const params = buildCasesQuery(
         isManager
           ? {
-              page: globalPage,
-              page_size: globalPageSize,
-              order: orderBy,
-              q: globalSearchTerm,
-              banco: globalSelectedBanco || undefined,
-              cargo: globalSelectedCargo || undefined,
+              page: globalPage, page_size: globalPageSize, order: orderBy,
+              q: globalSearchTerm, banco, cargo: globalSelectedCargo || undefined,
               status: globalSelectedStatus ? [globalSelectedStatus] : undefined,
-              exclude_siape: globalExcludeSiape || undefined,
+              exclude_siape,
             }
           : {
-              page: globalPage,
-              page_size: globalPageSize,
-              order: orderBy,
-              q: globalSearchTerm,
-              banco: globalSelectedBanco || undefined,
-              cargo: globalSelectedCargo || undefined,
-              status: ["novo"],
-              exclude_siape: globalExcludeSiape || undefined,
+              page: globalPage, page_size: globalPageSize, order: orderBy,
+              q: globalSearchTerm, banco, cargo: globalSelectedCargo || undefined,
+              status: ["novo"], exclude_siape,
             }
       );
 
@@ -193,22 +312,23 @@ function EsteiraPageContent() {
   const globalTotal = globalData?.total ?? 0;
   const globalTotalPages = Math.ceil(globalTotal / globalPageSize);
 
-  // Query para listar meus atendimentos
+  // Query — Meus Atendimentos
   const { data: myData, isLoading: loadingMine, error: errorMine } = useQuery({
-    queryKey: ["cases", "mine", myPage, myPageSize, mySelectedBanco, mySelectedCargo, mySelectedStatus, mySearchTerm, myExcludeSiape],
+    queryKey: [
+      "cases", "mine",
+      myPage, myPageSize,
+      mySelectedBanco, mySelectedCargo, mySelectedStatus,
+      mySearchTerm, mySiapeMode,
+    ],
     queryFn: async () => {
-      const orderBy = mySelectedBanco ? `financiamentos_banco_desc:${mySelectedBanco}` : "financiamentos_desc";
+      const { banco, exclude_siape } = resolveMyBancoParams();
+      const orderBy = banco ? `financiamentos_banco_desc:${banco}` : "financiamentos_desc";
 
       const params = buildCasesQuery({
-        page: myPage,
-        page_size: myPageSize,
-        order: orderBy,
-        q: mySearchTerm,
-        banco: mySelectedBanco || undefined,
-        cargo: mySelectedCargo || undefined,
+        page: myPage, page_size: myPageSize, order: orderBy,
+        q: mySearchTerm, banco, cargo: mySelectedCargo || undefined,
         status: mySelectedStatus ? [mySelectedStatus] : undefined,
-        mine: true,
-        exclude_siape: myExcludeSiape || undefined,
+        mine: true, exclude_siape,
       });
 
       const response = await api.get(`/cases?${params.toString()}`);
@@ -224,31 +344,19 @@ function EsteiraPageContent() {
   const myTotal = myData?.total ?? 0;
   const myTotalPages = Math.ceil(myTotal / myPageSize);
 
-  // Query para a esteira (todos os casos com filtros aplicados)
+  // Query — Esteira
   const { data: esteiraData, isLoading: loadingEsteira, error: errorEsteira } = useQuery({
     queryKey: ["cases", "esteira", esteiraSelectedBanco, esteiraSelectedCargo, esteiraSelectedStatus, esteiraSearchTerm],
     queryFn: async () => {
-      const isManager = ["super_admin", "admin", "supervisor"].includes(user?.role ?? "");
-
-      // Para esteira, sempre mostrar apenas casos novos
       const params = buildCasesQuery({
-        page: 1,
-        page_size: 1000, // Buscar muitos casos para navegação
-        order: "id_desc", // Usar ordenação simples por ID
-        q: esteiraSearchTerm,
-        status: ["novo"], // Sempre mostrar apenas casos novos na esteira
+        page: 1, page_size: 1000, order: "id_desc",
+        q: esteiraSearchTerm, status: ["novo"],
       });
-
-      console.log('[Esteira] User role:', user?.role);
-      console.log('[Esteira] Is Manager:', isManager);
-      console.log('[Esteira] Fetching cases with params:', params.toString());
       const response = await api.get(`/cases?${params.toString()}`);
-      console.log('[Esteira] Response:', response.data);
       return response.data;
     },
     onError: (error) => {
-      console.error('[Esteira] Error fetching cases:', error);
-      console.error('[Esteira] Error details:', (error as any)?.response?.data);
+      console.error('[Esteira] Error:', (error as any)?.response?.data);
     },
     enabled: !!user && activeTab === 'esteira',
     staleTime: 5000,
@@ -261,8 +369,7 @@ function EsteiraPageContent() {
   const esteiraTotal = esteiraData?.total ?? 0;
   const currentCase = esteiraCases[esteiraCurrentIndex];
 
-  // Query para buscar detalhes completos do caso atual na esteira
-  const { data: currentCaseDetails, isLoading: loadingCaseDetails } = useQuery({
+  const { data: currentCaseDetails } = useQuery({
     queryKey: ["case", currentCase?.id],
     queryFn: async () => {
       if (!currentCase?.id) return null;
@@ -274,60 +381,41 @@ function EsteiraPageContent() {
     refetchOnWindowFocus: false,
   });
 
-  // Funções de navegação da esteira
   const handleNextCase = () => {
-    if (esteiraCurrentIndex < esteiraCases.length - 1) {
-      setEsteiraCurrentIndex(esteiraCurrentIndex + 1);
-    }
+    if (esteiraCurrentIndex < esteiraCases.length - 1) setEsteiraCurrentIndex(esteiraCurrentIndex + 1);
   };
-
   const handlePreviousCase = () => {
-    if (esteiraCurrentIndex > 0) {
-      setEsteiraCurrentIndex(esteiraCurrentIndex - 1);
-    }
+    if (esteiraCurrentIndex > 0) setEsteiraCurrentIndex(esteiraCurrentIndex - 1);
   };
 
-  // Reset índice quando filtros mudam
   useEffect(() => {
     setEsteiraCurrentIndex(0);
   }, [esteiraSelectedBanco, esteiraSelectedCargo, esteiraSelectedStatus, esteiraSearchTerm]);
 
-  // Mutation para pegar um atendimento na tab esteira (inline)
   const assignCaseEsteiraMutation = useMutation({
     mutationFn: async (caseId: number) => {
       const response = await api.post(`/cases/${caseId}/assign`);
       return { data: response.data, caseId };
     },
     onSuccess: (result) => {
-      // Atualiza as queries após pegar um caso
       queryClient.invalidateQueries({ queryKey: ["cases"] });
       queryClient.invalidateQueries({ queryKey: ["case", result.caseId] });
       toast.success("Atendimento atribuído com sucesso!");
-      // NÃO redireciona - mantém na tab esteira para edição inline
     },
-    onError: (error) => {
-      toast.error("Erro ao atribuir atendimento. Tente novamente.");
-      console.error("Assign case error:", error);
-    },
+    onError: () => toast.error("Erro ao atribuir atendimento. Tente novamente."),
   });
 
-  // Mutation para pegar um atendimento nas outras tabs (redireciona)
   const assignCaseMutation = useMutation({
     mutationFn: async (caseId: number) => {
       const response = await api.post(`/cases/${caseId}/assign`);
       return { data: response.data, caseId };
     },
     onSuccess: (result) => {
-      // Atualiza as queries após pegar um caso
       queryClient.invalidateQueries({ queryKey: ["cases"] });
       toast.success("Atendimento atribuído com sucesso!");
-      // Redireciona automaticamente para os detalhes do caso
       router.push(`/casos/${result.caseId}`);
     },
-    onError: (error) => {
-      toast.error("Erro ao atribuir atendimento. Tente novamente.");
-      console.error("Assign case error:", error);
-    },
+    onError: () => toast.error("Erro ao atribuir atendimento. Tente novamente."),
   });
 
   const handleExportCsv = async () => {
@@ -336,18 +424,15 @@ function EsteiraPageContent() {
     try {
       const params = new URLSearchParams();
       if (globalSelectedStatus) params.set("status", globalSelectedStatus);
-      if (globalSelectedBanco) params.set("entidade", globalSelectedBanco);
-      if (globalExcludeSiape) params.set("exclude_siape", "true");
+      const { banco, exclude_siape } = resolveGlobalBancoParams();
+      if (banco) params.set("entidade", banco);
+      if (exclude_siape) params.set("exclude_siape", "true");
 
-      const response = await api.get(`/cases/export/csv?${params.toString()}`, {
-        responseType: "blob",
-      });
-
+      const response = await api.get(`/cases/export/csv?${params.toString()}`, { responseType: "blob" });
       const url = URL.createObjectURL(new Blob([response.data], { type: "text/csv;charset=utf-8;" }));
       const link = document.createElement("a");
       link.href = url;
-      const date = new Date().toISOString().slice(0, 10);
-      link.download = `casos_${date}.csv`;
+      link.download = `casos_${new Date().toISOString().slice(0, 10)}.csv`;
       link.click();
       URL.revokeObjectURL(url);
     } catch {
@@ -357,80 +442,50 @@ function EsteiraPageContent() {
     }
   };
 
-  const handlePegarAtendimento = (caseId: number) => {
-    assignCaseMutation.mutate(caseId);
-  };
-
-  const handlePegarAtendimentoEsteira = (caseId: number) => {
-    assignCaseEsteiraMutation.mutate(caseId);
-  };
+  const handlePegarAtendimento = (caseId: number) => assignCaseMutation.mutate(caseId);
+  const handlePegarAtendimentoEsteira = (caseId: number) => assignCaseEsteiraMutation.mutate(caseId);
 
   const handleViewCase = (caseId: number) => {
-    // Salvar estado atual da esteira no sessionStorage
     const currentPage = activeTab === 'mine' ? myPage : globalPage;
     const currentStatusFilter = activeTab === 'mine' ? mySelectedStatus : globalSelectedStatus;
     const currentSearchTerm = activeTab === 'mine' ? mySearchTerm : globalSearchTerm;
     const currentList = activeTab === 'mine' ? myCases : globalCases;
-
-    // Forçar aba global se não estiver explicitamente em 'mine'
     const tabToSave = activeTab === 'mine' ? 'mine' : 'global';
-
-    console.log('Salvando estado antes de navegar:', {
-      currentPage,
-      tabToSave,
-      activeTab,
-      globalPage,
-      myPage
-    });
 
     sessionStorage.setItem('esteira-page', currentPage.toString());
     sessionStorage.setItem('esteira-tab', tabToSave);
-    sessionStorage.setItem('esteira-filters', JSON.stringify({
-      status: currentStatusFilter,
-      search: currentSearchTerm
-    }));
+    sessionStorage.setItem('esteira-filters', JSON.stringify({ status: currentStatusFilter, search: currentSearchTerm }));
     sessionStorage.setItem('esteira-case-ids', JSON.stringify((currentList ?? []).map((c) => c.id)));
-
-    // Verificar se foi salvo corretamente
-    const savedPage = sessionStorage.getItem('esteira-page');
-    const savedTab = sessionStorage.getItem('esteira-tab');
-    console.log('Verificação após salvar:', { savedPage, savedTab });
 
     router.push(`/casos/${caseId}`);
   };
 
-  // Query para buscar filtros disponíveis (bancos, cargos e status)
   const { data: filtersData } = useQuery({
     queryKey: ["client-filters"],
     queryFn: async () => {
       const response = await api.get("/clients/filters");
       return response.data;
     },
-    staleTime: 60000, // Cache por 1 minuto
+    staleTime: 60000,
   });
 
-  const renderCaseList = (cases: Case[], showPegarButton: boolean, isLoading: boolean, error?: any) => {
+  const bancos: Array<{ value: string; label: string; count: number }> = filtersData?.bancos ?? [];
 
+  const renderCaseList = (cases: Case[], showPegarButton: boolean, isLoading: boolean, error?: any) => {
     if (isLoading) {
       return (
         <div className="grid gap-3 grid-cols-1 md:grid-cols-2">
-          {Array.from({ length: 6 }, (_, i) => (
-            <CaseSkeleton key={i} />
-          ))}
+          {Array.from({ length: 6 }, (_, i) => <CaseSkeleton key={i} />)}
         </div>
       );
     }
 
     if (error) {
-      console.error('Erro ao carregar atendimentos:', error);
       return (
         <div className="col-span-full text-center py-8 text-destructive">
           Erro ao carregar atendimentos. Tente novamente.
           <br />
-          <button
-            onClick={() => queryClient.invalidateQueries({ queryKey: ["cases"] })}
-            className="mt-2 text-sm underline"
-          >
+          <button onClick={() => queryClient.invalidateQueries({ queryKey: ["cases"] })} className="mt-2 text-sm underline">
             Recarregar
           </button>
         </div>
@@ -456,6 +511,9 @@ function EsteiraPageContent() {
     );
   };
 
+  const globalHasFilters = globalSelectedBanco || globalSelectedCargo || globalSelectedStatus || globalSiapeMode !== 'all';
+  const myHasFilters = mySelectedBanco || mySelectedCargo || mySelectedStatus || mySiapeMode !== 'all';
+
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
@@ -468,9 +526,9 @@ function EsteiraPageContent() {
           <TabsTrigger value="mine">Meus Atendimentos ({myTotal})</TabsTrigger>
         </TabsList>
 
+        {/* ===== GLOBAL ===== */}
         <TabsContent value="global" className="mt-6">
           <div className="space-y-6">
-            {/* Filtros */}
             <Card className="p-4 space-y-4">
               {/* Busca + ações admin */}
               <div className="flex items-center gap-4">
@@ -500,34 +558,25 @@ function EsteiraPageContent() {
                 )}
               </div>
 
-              {/* Filtros Rápidos - Dropdowns */}
+              {/* Dropdowns + SIAPE */}
               <div className="space-y-3">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {/* Dropdown Banco */}
-                  {filtersData?.bancos && filtersData.bancos.length > 0 && (
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  {/* Banco — combobox autocomplete */}
+                  {bancos.length > 0 && (
                     <div className="flex flex-col gap-1.5">
                       <label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">
                         <Building2 className="h-3.5 w-3.5" />
                         Banco
                       </label>
-                      <select
-                        value={globalSelectedBanco || ""}
-                        onChange={(e) => {
-                          setGlobalSelectedBanco(e.target.value || null);
-                        }}
-                        className="h-10 w-full px-3 py-2 rounded-lg border border-border bg-card text-sm text-foreground transition-colors hover:border-primary focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                      >
-                        <option value="">Todos os bancos</option>
-                        {filtersData.bancos.map((banco: any) => (
-                          <option key={banco.value} value={banco.value}>
-                            {banco.label} ({banco.count})
-                          </option>
-                        ))}
-                      </select>
+                      <BancoCombobox
+                        value={globalSiapeMode === 'only' ? 'SIAPE' : globalSelectedBanco}
+                        onSelect={setGlobalSelectedBanco}
+                        bancos={bancos}
+                      />
                     </div>
                   )}
 
-                  {/* Dropdown Cargo */}
+                  {/* Cargo */}
                   {filtersData?.cargos && filtersData.cargos.length > 0 && (
                     <div className="flex flex-col gap-1.5">
                       <label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">
@@ -536,9 +585,7 @@ function EsteiraPageContent() {
                       </label>
                       <select
                         value={globalSelectedCargo || ""}
-                        onChange={(e) => {
-                          setGlobalSelectedCargo(e.target.value || null);
-                        }}
+                        onChange={(e) => setGlobalSelectedCargo(e.target.value || null)}
                         className="h-10 w-full px-3 py-2 rounded-lg border border-border bg-card text-sm text-foreground transition-colors hover:border-primary focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
                       >
                         <option value="">Todos os cargos</option>
@@ -551,7 +598,7 @@ function EsteiraPageContent() {
                     </div>
                   )}
 
-                  {/* Dropdown Status - APENAS ADMIN */}
+                  {/* Status — APENAS ADMIN */}
                   {isAdminOrSupervisor && filtersData?.status && filtersData.status.length > 0 && (
                     <div className="flex flex-col gap-1.5">
                       <label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">
@@ -560,9 +607,7 @@ function EsteiraPageContent() {
                       </label>
                       <select
                         value={globalSelectedStatus || ""}
-                        onChange={(e) => {
-                          setGlobalSelectedStatus(e.target.value || null);
-                        }}
+                        onChange={(e) => setGlobalSelectedStatus(e.target.value || null)}
                         className="h-10 w-full px-3 py-2 rounded-lg border border-border bg-card text-sm text-foreground transition-colors hover:border-primary focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
                       >
                         <option value="">Todos os status</option>
@@ -574,27 +619,14 @@ function EsteiraPageContent() {
                       </select>
                     </div>
                   )}
+
+                  {/* SIAPE — 3 estados */}
+                  <SiapeFilter value={globalSiapeMode} onChange={setGlobalSiapeMode} />
                 </div>
 
-                {/* Toggle excluir SIAPE/GOV + Limpar filtros */}
-                <div className="flex items-center gap-4 pt-1 flex-wrap">
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={globalExcludeSiape}
-                      onClick={() => setGlobalExcludeSiape(v => !v)}
-                      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none ${globalExcludeSiape ? 'bg-primary' : 'bg-muted'}`}
-                    >
-                      <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-lg transition-transform ${globalExcludeSiape ? 'translate-x-4' : 'translate-x-0'}`} />
-                    </button>
-                    <label className="flex items-center gap-1 text-xs font-medium text-muted-foreground cursor-pointer select-none" onClick={() => setGlobalExcludeSiape(v => !v)}>
-                      <ShieldOff className="h-3.5 w-3.5" />
-                      Excluir SIAPE/GOV
-                    </label>
-                  </div>
-
-                  {(globalSelectedBanco || globalSelectedCargo || globalSelectedStatus || globalExcludeSiape) && (
+                {/* Limpar filtros */}
+                {globalHasFilters && (
+                  <div className="flex items-center pt-1">
                     <Button
                       variant="outline"
                       size="sm"
@@ -602,21 +634,20 @@ function EsteiraPageContent() {
                         setGlobalSelectedBanco(null);
                         setGlobalSelectedCargo(null);
                         setGlobalSelectedStatus(null);
-                        setGlobalExcludeSiape(false);
+                        setGlobalSiapeMode('all');
                       }}
-                      className="h-9"
+                      className="h-8"
                     >
-                      <X className="h-4 w-4 mr-2" />
+                      <X className="h-3.5 w-3.5 mr-1.5" />
                       Limpar filtros
                     </Button>
-                  )}
-                </div>
+                  </div>
+                )}
               </div>
             </Card>
 
             {renderCaseList(globalCases, true, loadingGlobal, errorGlobal)}
 
-            {/* Paginação */}
             {globalTotal > 0 && (
               <Pagination
                 currentPage={globalPage}
@@ -624,47 +655,25 @@ function EsteiraPageContent() {
                 totalItems={globalTotal}
                 itemsPerPage={globalPageSize}
                 onPageChange={setGlobalPage}
-                onItemsPerPageChange={(size) => {
-                  setGlobalPageSize(size);
-                }}
+                onItemsPerPageChange={(size) => setGlobalPageSize(size)}
                 itemsPerPageOptions={[20, 50, 100]}
               />
             )}
           </div>
         </TabsContent>
 
+        {/* ===== MEUS ATENDIMENTOS ===== */}
         <TabsContent value="mine" className="mt-6">
           <div className="space-y-6">
-            {/* KPI Cards para Meus Atendimentos */}
+            {/* KPI Cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-              <KPICard
-                title="Total de Casos"
-                value={myStats?.totalCases || 0}
-                icon={Target}
-              />
-              <KPICard
-                title="Casos Ativos"
-                value={myStats?.activeCases || 0}
-                icon={AlertCircle}
-              />
-              <KPICard
-                title="Casos Finalizados"
-                value={myStats?.completedCases || 0}
-                icon={CheckCircle}
-              />
-              <KPICard
-                title="Taxa de Conversão"
-                value={`${myStats?.conversionRate || 0}%`}
-                icon={TrendingUp}
-              />
-              <KPICard
-                title="Volume Financeiro"
-                value={`R$ ${(myStats?.totalVolume || 0).toLocaleString('pt-BR')}`}
-                icon={DollarSign}
-              />
+              <KPICard title="Total de Casos" value={myStats?.totalCases || 0} icon={Target} />
+              <KPICard title="Casos Ativos" value={myStats?.activeCases || 0} icon={AlertCircle} />
+              <KPICard title="Casos Finalizados" value={myStats?.completedCases || 0} icon={CheckCircle} />
+              <KPICard title="Taxa de Conversão" value={`${myStats?.conversionRate || 0}%`} icon={TrendingUp} />
+              <KPICard title="Volume Financeiro" value={`R$ ${(myStats?.totalVolume || 0).toLocaleString('pt-BR')}`} icon={DollarSign} />
             </div>
 
-            {/* Filtros - Sistema Clientes */}
             <Card className="p-4 space-y-4">
               {/* Busca */}
               <div className="flex items-center gap-4">
@@ -673,9 +682,7 @@ function EsteiraPageContent() {
                   <Input
                     placeholder="Buscar por nome, CPF ou matrícula..."
                     value={mySearchTerm}
-                    onChange={(e) => {
-                      setMySearchTerm(e.target.value);
-                    }}
+                    onChange={(e) => setMySearchTerm(e.target.value)}
                     className="pl-10"
                   />
                 </div>
@@ -684,34 +691,25 @@ function EsteiraPageContent() {
                 </div>
               </div>
 
-              {/* Filtros Rápidos - Dropdowns */}
+              {/* Dropdowns + SIAPE */}
               <div className="space-y-3">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {/* Dropdown Banco */}
-                  {filtersData?.bancos && filtersData.bancos.length > 0 && (
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  {/* Banco — combobox */}
+                  {bancos.length > 0 && (
                     <div className="flex flex-col gap-1.5">
                       <label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">
                         <Building2 className="h-3.5 w-3.5" />
                         Banco
                       </label>
-                      <select
-                        value={mySelectedBanco || ""}
-                        onChange={(e) => {
-                          setMySelectedBanco(e.target.value || null);
-                        }}
-                        className="h-10 w-full px-3 py-2 rounded-lg border border-border bg-card text-sm text-foreground transition-colors hover:border-primary focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                      >
-                        <option value="">Todos os bancos</option>
-                        {filtersData.bancos.map((banco: any) => (
-                          <option key={banco.value} value={banco.value}>
-                            {banco.label} ({banco.count})
-                          </option>
-                        ))}
-                      </select>
+                      <BancoCombobox
+                        value={mySiapeMode === 'only' ? 'SIAPE' : mySelectedBanco}
+                        onSelect={setMySelectedBanco}
+                        bancos={bancos}
+                      />
                     </div>
                   )}
 
-                  {/* Dropdown Cargo */}
+                  {/* Cargo */}
                   {filtersData?.cargos && filtersData.cargos.length > 0 && (
                     <div className="flex flex-col gap-1.5">
                       <label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">
@@ -720,9 +718,7 @@ function EsteiraPageContent() {
                       </label>
                       <select
                         value={mySelectedCargo || ""}
-                        onChange={(e) => {
-                          setMySelectedCargo(e.target.value || null);
-                        }}
+                        onChange={(e) => setMySelectedCargo(e.target.value || null)}
                         className="h-10 w-full px-3 py-2 rounded-lg border border-border bg-card text-sm text-foreground transition-colors hover:border-primary focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
                       >
                         <option value="">Todos os cargos</option>
@@ -735,7 +731,7 @@ function EsteiraPageContent() {
                     </div>
                   )}
 
-                  {/* Dropdown Status */}
+                  {/* Status */}
                   {filtersData?.status && filtersData.status.length > 0 && (
                     <div className="flex flex-col gap-1.5">
                       <label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">
@@ -744,9 +740,7 @@ function EsteiraPageContent() {
                       </label>
                       <select
                         value={mySelectedStatus || ""}
-                        onChange={(e) => {
-                          setMySelectedStatus(e.target.value || null);
-                        }}
+                        onChange={(e) => setMySelectedStatus(e.target.value || null)}
                         className="h-10 w-full px-3 py-2 rounded-lg border border-border bg-card text-sm text-foreground transition-colors hover:border-primary focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
                       >
                         <option value="">Todos os status</option>
@@ -758,27 +752,14 @@ function EsteiraPageContent() {
                       </select>
                     </div>
                   )}
+
+                  {/* SIAPE — 3 estados */}
+                  <SiapeFilter value={mySiapeMode} onChange={setMySiapeMode} />
                 </div>
 
-                {/* Toggle excluir SIAPE/GOV + Limpar filtros — Meus Atendimentos */}
-                <div className="flex items-center gap-4 pt-1 flex-wrap">
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={myExcludeSiape}
-                      onClick={() => setMyExcludeSiape(v => !v)}
-                      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none ${myExcludeSiape ? 'bg-primary' : 'bg-muted'}`}
-                    >
-                      <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-lg transition-transform ${myExcludeSiape ? 'translate-x-4' : 'translate-x-0'}`} />
-                    </button>
-                    <label className="flex items-center gap-1 text-xs font-medium text-muted-foreground cursor-pointer select-none" onClick={() => setMyExcludeSiape(v => !v)}>
-                      <ShieldOff className="h-3.5 w-3.5" />
-                      Excluir SIAPE/GOV
-                    </label>
-                  </div>
-
-                  {(mySelectedBanco || mySelectedCargo || mySelectedStatus || myExcludeSiape) && (
+                {/* Limpar filtros */}
+                {myHasFilters && (
+                  <div className="flex items-center pt-1">
                     <Button
                       variant="outline"
                       size="sm"
@@ -786,26 +767,18 @@ function EsteiraPageContent() {
                         setMySelectedBanco(null);
                         setMySelectedCargo(null);
                         setMySelectedStatus(null);
-                        setMyExcludeSiape(false);
+                        setMySiapeMode('all');
                       }}
-                      className="h-9"
+                      className="h-8"
                     >
-                      <X className="h-4 w-4 mr-2" />
+                      <X className="h-3.5 w-3.5 mr-1.5" />
                       Limpar filtros
                     </Button>
-                  )}
-                </div>
+                  </div>
+                )}
               </div>
             </Card>
 
-            {/* <div className="flex items-center justify-between">
-              <h2 className="text-lg font-medium">Meus Atendimentos</h2>
-              <Badge variant="secondary">
-                {myTotal} {myTotal === 1 ? 'atendimento' : 'atendimentos'}
-              </Badge>
-            </div> */}
-
-            {/* Tabela de Casos */}
             <CasesTable
               cases={myCases}
               onViewCase={handleViewCase}
@@ -814,7 +787,6 @@ function EsteiraPageContent() {
               showFilters={false}
             />
 
-            {/* PaginaÃ§Ã£o */}
             {myTotal > 0 && (
               <Pagination
                 currentPage={myPage}
@@ -822,9 +794,7 @@ function EsteiraPageContent() {
                 totalItems={myTotal}
                 itemsPerPage={myPageSize}
                 onPageChange={setMyPage}
-                onItemsPerPageChange={(size) => {
-                  setMyPageSize(size);
-                }}
+                onItemsPerPageChange={(size) => setMyPageSize(size)}
                 itemsPerPageOptions={[20, 50, 100]}
               />
             )}
@@ -842,5 +812,3 @@ export default function EsteiraPage() {
     </Suspense>
   );
 }
-
-

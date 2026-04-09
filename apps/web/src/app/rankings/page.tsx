@@ -205,9 +205,8 @@ export default function RankingsPage() {
         return true;
       }
 
-      // Lista de usuários/padrões a excluir
+      // Lista de usuários/padrões a excluir (apenas nomes de sistema, não atendentes reais)
       const excludedPatterns = [
-        "peltson",
         "administrador",
         "admin",
         "calculista",
