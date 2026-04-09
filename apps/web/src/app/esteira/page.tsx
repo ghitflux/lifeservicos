@@ -9,7 +9,7 @@ import { useMyStats } from "@/lib/hooks";
 import { useAuth } from "@/lib/auth";
 import { buildCasesQuery } from "@/lib/query";
 import { toast } from "sonner";
-import { Search, X, Building2, Activity, CheckCircle, AlertCircle, TrendingUp, DollarSign, Target, User, Phone, Briefcase, Hash, Calendar, CreditCard, MapPin, Copy, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search, X, Building2, Activity, CheckCircle, AlertCircle, TrendingUp, DollarSign, Target, User, Phone, Briefcase, Hash, Calendar, CreditCard, MapPin, Copy, ChevronLeft, ChevronRight, Download, ShieldOff } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -49,6 +49,8 @@ function EsteiraPageContent() {
   const [globalSelectedBanco, setGlobalSelectedBanco] = useState<string | null>(null);
   const [globalSelectedCargo, setGlobalSelectedCargo] = useState<string | null>(null);
   const [globalSelectedStatus, setGlobalSelectedStatus] = useState<string | null>(null);
+  const [globalExcludeSiape, setGlobalExcludeSiape] = useState(false);
+  const [exportingCsv, setExportingCsv] = useState(false);
 
   const [myPage, setMyPage] = useState(1);
   const [myPageSize, setMyPageSize] = useState(20);
@@ -56,6 +58,7 @@ function EsteiraPageContent() {
   const [mySelectedBanco, setMySelectedBanco] = useState<string | null>(null);
   const [mySelectedCargo, setMySelectedCargo] = useState<string | null>(null);
   const [mySelectedStatus, setMySelectedStatus] = useState<string | null>(null);
+  const [myExcludeSiape, setMyExcludeSiape] = useState(false);
 
   // Estados para a tab Esteira
   const [esteiraCurrentIndex, setEsteiraCurrentIndex] = useState(0);
@@ -71,12 +74,12 @@ function EsteiraPageContent() {
   // Reset página quando filtros mudam
   useEffect(() => {
     setGlobalPage(1);
-  }, [globalSelectedBanco, globalSelectedCargo, globalSelectedStatus, globalSearchTerm]);
+  }, [globalSelectedBanco, globalSelectedCargo, globalSelectedStatus, globalSearchTerm, globalExcludeSiape]);
 
 
   useEffect(() => {
     setMyPage(1);
-  }, [mySelectedBanco, mySelectedCargo, mySelectedStatus, mySearchTerm]);
+  }, [mySelectedBanco, mySelectedCargo, mySelectedStatus, mySearchTerm, myExcludeSiape]);
 
   useEffect(() => {
     setGlobalPage(1);
@@ -145,12 +148,12 @@ function EsteiraPageContent() {
       globalSelectedBanco,
       globalSelectedCargo,
       globalSelectedStatus,
-      globalSearchTerm
+      globalSearchTerm,
+      globalExcludeSiape,
     ],
     queryFn: async () => {
       const isManager = ["super_admin", "admin", "supervisor"].includes(user?.role ?? "");
 
-      // Determinar ordenação: se tem filtro de banco, ordenar por contratos daquele banco
       const orderBy = globalSelectedBanco ? `financiamentos_banco_desc:${globalSelectedBanco}` : "financiamentos_desc";
 
       const params = buildCasesQuery(
@@ -163,6 +166,7 @@ function EsteiraPageContent() {
               banco: globalSelectedBanco || undefined,
               cargo: globalSelectedCargo || undefined,
               status: globalSelectedStatus ? [globalSelectedStatus] : undefined,
+              exclude_siape: globalExcludeSiape || undefined,
             }
           : {
               page: globalPage,
@@ -171,8 +175,8 @@ function EsteiraPageContent() {
               q: globalSearchTerm,
               banco: globalSelectedBanco || undefined,
               cargo: globalSelectedCargo || undefined,
-              status: ["novo"],     // atendente só vê novos
-              // REMOVIDO assigned=0 para permitir ver casos expirados também
+              status: ["novo"],
+              exclude_siape: globalExcludeSiape || undefined,
             }
       );
 
@@ -191,9 +195,8 @@ function EsteiraPageContent() {
 
   // Query para listar meus atendimentos
   const { data: myData, isLoading: loadingMine, error: errorMine } = useQuery({
-    queryKey: ["cases", "mine", myPage, myPageSize, mySelectedBanco, mySelectedCargo, mySelectedStatus, mySearchTerm],
+    queryKey: ["cases", "mine", myPage, myPageSize, mySelectedBanco, mySelectedCargo, mySelectedStatus, mySearchTerm, myExcludeSiape],
     queryFn: async () => {
-      // Determinar ordenação: se tem filtro de banco, ordenar por contratos daquele banco
       const orderBy = mySelectedBanco ? `financiamentos_banco_desc:${mySelectedBanco}` : "financiamentos_desc";
 
       const params = buildCasesQuery({
@@ -205,6 +208,7 @@ function EsteiraPageContent() {
         cargo: mySelectedCargo || undefined,
         status: mySelectedStatus ? [mySelectedStatus] : undefined,
         mine: true,
+        exclude_siape: myExcludeSiape || undefined,
       });
 
       const response = await api.get(`/cases?${params.toString()}`);
@@ -326,6 +330,33 @@ function EsteiraPageContent() {
     },
   });
 
+  const handleExportCsv = async () => {
+    if (!isAdminOrSupervisor) return;
+    setExportingCsv(true);
+    try {
+      const params = new URLSearchParams();
+      if (globalSelectedStatus) params.set("status", globalSelectedStatus);
+      if (globalSelectedBanco) params.set("entidade", globalSelectedBanco);
+      if (globalExcludeSiape) params.set("exclude_siape", "true");
+
+      const response = await api.get(`/cases/export/csv?${params.toString()}`, {
+        responseType: "blob",
+      });
+
+      const url = URL.createObjectURL(new Blob([response.data], { type: "text/csv;charset=utf-8;" }));
+      const link = document.createElement("a");
+      link.href = url;
+      const date = new Date().toISOString().slice(0, 10);
+      link.download = `casos_${date}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error("Erro ao exportar CSV. Tente novamente.");
+    } finally {
+      setExportingCsv(false);
+    }
+  };
+
   const handlePegarAtendimento = (caseId: number) => {
     assignCaseMutation.mutate(caseId);
   };
@@ -439,24 +470,34 @@ function EsteiraPageContent() {
 
         <TabsContent value="global" className="mt-6">
           <div className="space-y-6">
-            {/* Filtros - Sistema Clientes */}
+            {/* Filtros */}
             <Card className="p-4 space-y-4">
-              {/* Busca */}
+              {/* Busca + ações admin */}
               <div className="flex items-center gap-4">
                 <div className="relative flex-1 max-w-md">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
                     placeholder="Buscar por nome, CPF ou matrícula..."
                     value={globalSearchTerm}
-                    onChange={(e) => {
-                      setGlobalSearchTerm(e.target.value);
-                    }}
+                    onChange={(e) => setGlobalSearchTerm(e.target.value)}
                     className="pl-10"
                   />
                 </div>
                 <div className="text-sm text-muted-foreground">
                   {globalTotal} {globalTotal === 1 ? 'disponível' : 'disponíveis'}
                 </div>
+                {isAdminOrSupervisor && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleExportCsv}
+                    disabled={exportingCsv}
+                    className="h-9 gap-2"
+                  >
+                    <Download className="h-4 w-4" />
+                    {exportingCsv ? "Exportando..." : "Exportar CSV"}
+                  </Button>
+                )}
               </div>
 
               {/* Filtros Rápidos - Dropdowns */}
@@ -535,9 +576,25 @@ function EsteiraPageContent() {
                   )}
                 </div>
 
-                {/* Botão Limpar Filtros */}
-                {(globalSelectedBanco || globalSelectedCargo || globalSelectedStatus) && (
+                {/* Toggle excluir SIAPE/GOV + Limpar filtros */}
+                <div className="flex items-center gap-4 pt-1 flex-wrap">
                   <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={globalExcludeSiape}
+                      onClick={() => setGlobalExcludeSiape(v => !v)}
+                      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none ${globalExcludeSiape ? 'bg-primary' : 'bg-muted'}`}
+                    >
+                      <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-lg transition-transform ${globalExcludeSiape ? 'translate-x-4' : 'translate-x-0'}`} />
+                    </button>
+                    <label className="flex items-center gap-1 text-xs font-medium text-muted-foreground cursor-pointer select-none" onClick={() => setGlobalExcludeSiape(v => !v)}>
+                      <ShieldOff className="h-3.5 w-3.5" />
+                      Excluir SIAPE/GOV
+                    </label>
+                  </div>
+
+                  {(globalSelectedBanco || globalSelectedCargo || globalSelectedStatus || globalExcludeSiape) && (
                     <Button
                       variant="outline"
                       size="sm"
@@ -545,14 +602,15 @@ function EsteiraPageContent() {
                         setGlobalSelectedBanco(null);
                         setGlobalSelectedCargo(null);
                         setGlobalSelectedStatus(null);
+                        setGlobalExcludeSiape(false);
                       }}
                       className="h-9"
                     >
                       <X className="h-4 w-4 mr-2" />
                       Limpar filtros
                     </Button>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
             </Card>
 
@@ -702,9 +760,25 @@ function EsteiraPageContent() {
                   )}
                 </div>
 
-                {/* Botão Limpar Filtros */}
-                {(mySelectedBanco || mySelectedCargo || mySelectedStatus) && (
+                {/* Toggle excluir SIAPE/GOV + Limpar filtros — Meus Atendimentos */}
+                <div className="flex items-center gap-4 pt-1 flex-wrap">
                   <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={myExcludeSiape}
+                      onClick={() => setMyExcludeSiape(v => !v)}
+                      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none ${myExcludeSiape ? 'bg-primary' : 'bg-muted'}`}
+                    >
+                      <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-lg transition-transform ${myExcludeSiape ? 'translate-x-4' : 'translate-x-0'}`} />
+                    </button>
+                    <label className="flex items-center gap-1 text-xs font-medium text-muted-foreground cursor-pointer select-none" onClick={() => setMyExcludeSiape(v => !v)}>
+                      <ShieldOff className="h-3.5 w-3.5" />
+                      Excluir SIAPE/GOV
+                    </label>
+                  </div>
+
+                  {(mySelectedBanco || mySelectedCargo || mySelectedStatus || myExcludeSiape) && (
                     <Button
                       variant="outline"
                       size="sm"
@@ -712,14 +786,15 @@ function EsteiraPageContent() {
                         setMySelectedBanco(null);
                         setMySelectedCargo(null);
                         setMySelectedStatus(null);
+                        setMyExcludeSiape(false);
                       }}
                       className="h-9"
                     >
                       <X className="h-4 w-4 mr-2" />
                       Limpar filtros
                     </Button>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
             </Card>
 

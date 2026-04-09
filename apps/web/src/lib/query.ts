@@ -10,6 +10,7 @@ export type Filters = {
   cargo?: string;             // filtro por cargo
   mine?: boolean;             // esteira individual
   assigned?: '0' | '1';       // '0' = não atribuídos, '1' = atribuídos
+  exclude_siape?: boolean;    // excluir casos SIAPE/GOV
 };
 
 export function buildCasesQuery(
@@ -46,6 +47,9 @@ export function buildCasesQuery(
   // mine/assigned conforme necessidade
   if (f.mine) set('mine', 'true');
   if (f.assigned) set('assigned', f.assigned);
+
+  // excluir SIAPE/GOV
+  if (f.exclude_siape) set('exclude_siape', 'true');
 
   return p;
 }

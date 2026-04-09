@@ -242,87 +242,56 @@ def get_available_filters(
     ))
 ):
     """
-    Retorna filtros disponíveis para clientes (bancos credores e cargos).
-    Bancos = Entidades importadas dos arquivos TXT (de PayrollLine)
-    Cargos = Cargos únicos dos clientes
-    Órgãos = Órgãos pagadores dos clientes
+    Retorna filtros disponíveis para a esteira (bancos, cargos e status).
+    Bancos = agrupados por cases.entidade normalizado, com contagem de casos novos.
     """
-    # Listar entidades únicas das linhas de folha importadas (entity_name)
-    entidades = db.query(PayrollLine.entity_name).filter(
-        PayrollLine.entity_name.isnot(None)
-    ).distinct().all()
-    entidades_list = sorted([e[0] for e in entidades if e[0]])
-
-    # Listar bancos da importação SIAPE (banco_emprestimo)
-    siape_bancos = db.query(SiapeLine.banco_emprestimo).filter(
-        SiapeLine.banco_emprestimo.isnot(None)
-    ).distinct().all()
-    siape_bancos_list = [e[0] for e in siape_bancos if e[0]]
-
     # Listar status de casos únicos do banco de dados
     db_status_list = db.query(Case.status).distinct().all()
     db_status_set = set(s[0] for s in db_status_list if s[0])
 
-    # Agrupar entidades por nome normalizado
-    bancos_agrupados = {}
+    # Bancos: agrupar cases.entidade por nome normalizado, contar casos novos
+    entidades_raw = db.query(Case.entidade).filter(
+        Case.entidade.isnot(None)
+    ).distinct().all()
+    entidades_list = [e[0] for e in entidades_raw if e[0]]
+
+    bancos_agrupados: dict[str, list[str]] = {}
     for entidade in entidades_list:
         normalized = normalize_bank_name(entidade)
-        if normalized not in bancos_agrupados:
-            bancos_agrupados[normalized] = []
-        bancos_agrupados[normalized].append(entidade)
+        bancos_agrupados.setdefault(normalized, []).append(entidade)
 
-    # Contar clientes por banco agrupado
     bancos_with_count = []
     for normalized_name, entidades_grupo in sorted(bancos_agrupados.items()):
-        # Contar clientes únicos com financiamentos deste grupo de entidades
+        # Contar apenas casos com status 'novo'
         count = (
-            db.query(func.count(distinct(Client.id)))
-            .join(PayrollLine, PayrollLine.cpf == Client.cpf)
-            .filter(PayrollLine.entity_name.in_(entidades_grupo))
+            db.query(func.count(Case.id))
+            .filter(
+                Case.entidade.in_(entidades_grupo),
+                Case.status == "novo",
+            )
             .scalar()
-        )
-        bancos_with_count.append({
-            "value": normalized_name,
-            "label": normalized_name,
-            "count": count
-        })
-
-    # Agregar bancos SIAPE ao mesmo dicionário (somando se já existir)
-    siape_grouped = {}
-    for b in siape_bancos_list:
-        norm = normalize_bank_name(b)
-        siape_grouped.setdefault(norm, []).append(b)
-
-    for normalized_name, entidades_grupo in siape_grouped.items():
-        count = (
-            db.query(func.count(distinct(Client.id)))
-            .join(SiapeLine, SiapeLine.cpf == Client.cpf)
-            .filter(SiapeLine.banco_emprestimo.in_(entidades_grupo))
-            .scalar()
-        )
-        # Ver se já existe entrada (de contracheque) e somar
-        existing = next((x for x in bancos_with_count if x["value"] == normalized_name), None)
-        if existing:
-            existing["count"] = (existing.get("count") or 0) + count
-        else:
+        ) or 0
+        if count > 0:
             bancos_with_count.append({
                 "value": normalized_name,
                 "label": normalized_name,
-                "count": count
+                "count": count,
             })
 
-    # Incluir SIAPE como banco quando houver linhas SIAPE
-    siape_clientes = (
-        db.query(func.count(distinct(Client.id)))
-        .join(Case, Case.client_id == Client.id)
-        .filter(Case.source == "siape")
+    # Ordenar por contagem decrescente
+    bancos_with_count.sort(key=lambda x: x["count"], reverse=True)
+
+    # Adicionar entrada especial SIAPE (casos importados via SIAPE)
+    siape_count = (
+        db.query(func.count(Case.id))
+        .filter(Case.source == "siape", Case.status == "novo")
         .scalar()
     ) or 0
-    if siape_clientes > 0:
+    if siape_count > 0:
         bancos_with_count.append({
             "value": "SIAPE",
-            "label": "SIAPE",
-            "count": siape_clientes
+            "label": "SIAPE (Gov Federal)",
+            "count": siape_count,
         })
 
     # Status padrão que devem SEMPRE aparecer nos filtros
@@ -360,44 +329,33 @@ def get_available_filters(
         })
 
 
-    # Buscar cargos únicos dos clientes
-    cargos = db.query(Client.cargo).filter(
+    # Cargos: agrupar por clients.cargo, contar casos novos associados
+    cargos_raw = db.query(Client.cargo).filter(
         Client.cargo.isnot(None),
-        Client.cargo != ''
+        Client.cargo != "",
     ).distinct().all()
-    cargos_list = sorted([c[0] for c in cargos if c[0]])
+    cargos_list = sorted([c[0] for c in cargos_raw if c[0]])
 
-    # Contar clientes por cargo
     cargos_with_count = []
     for cargo in cargos_list:
-        count = db.query(func.count(Client.id)).filter(
-            Client.cargo == cargo
-        ).scalar() or 0
-        cargos_with_count.append({
-            "value": cargo,
-            "label": cargo,
-            "count": count
-        })
-
-    # Contar clientes sem contratos (sem financiamentos)
-    clientes_sem_contratos = (
-        db.query(func.count(Client.id))
-        .filter(
-            ~db.query(PayrollLine.id)
-            .filter(
-                PayrollLine.cpf == Client.cpf,
-                PayrollLine.matricula == Client.matricula
-            )
-            .exists()
-        )
-        .scalar() or 0
-    )
+        count = (
+            db.query(func.count(Case.id))
+            .join(Client, Client.id == Case.client_id)
+            .filter(Client.cargo == cargo, Case.status == "novo")
+            .scalar()
+        ) or 0
+        if count > 0:
+            cargos_with_count.append({
+                "value": cargo,
+                "label": cargo,
+                "count": count,
+            })
+    cargos_with_count.sort(key=lambda x: x["count"], reverse=True)
 
     return {
         "bancos": bancos_with_count,
         "cargos": cargos_with_count,
         "status": status_with_count,
-        "clientes_sem_contratos": clientes_sem_contratos
     }
 
 

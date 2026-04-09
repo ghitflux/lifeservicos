@@ -1,5 +1,5 @@
 from fastapi import (  # pyright: ignore[reportMissingImports]
-    APIRouter, Depends, HTTPException, UploadFile, File, Query, Request
+    APIRouter, Depends, HTTPException, UploadFile, File, Query, Request, Response
 )
 from pydantic import BaseModel  # pyright: ignore[reportMissingImports]
 from typing import List
@@ -796,6 +796,7 @@ def list_cases(
     entidade: str | None = None,  # Filtro por entidade/banco
     entity: str | None = None,  # Alias legado
     cargo: str | None = None,  # Filtro por cargo
+    exclude_siape: bool = Query(False),  # Excluir casos SIAPE/GOV
     assigned: str | None = None,  # '0' = não atribuídos, '1' = atribuídos
     mine: str | bool = Query(False),
     order: str = Query("id_desc"),
@@ -867,80 +868,53 @@ def list_cases(
                 elif len(status_list) > 1:
                     qry = qry.filter(Case.status.in_(status_list))
 
-            # Filtro por entidade (banco)
+            # Filtro por entidade (banco) — usa cases.entidade diretamente, sem join PayrollLine
             if entity_filter:
-                from app.models import PayrollLine
                 from app.routers.clients import normalize_bank_name
 
-                # Caso especial: SIAPE filtra por source ao invés de PayrollLine
                 if entity_filter.upper() == 'SIAPE':
+                    # Filtro especial: todos os casos importados via SIAPE
                     qry = qry.filter(Case.source == 'siape')
                 else:
-                    # Verificar se é um banco do SIAPE (existe em SiapeLine.banco_emprestimo)
-                    siape_bancos = db.query(SiapeLine.banco_emprestimo).filter(
-                        SiapeLine.banco_emprestimo.isnot(None)
+                    # Buscar todas as entidades distintas e filtrar pelo nome normalizado
+                    all_entidades = db.query(Case.entidade).filter(
+                        Case.entidade.isnot(None)
                     ).distinct().all()
-                    siape_bancos_normalized = {normalize_bank_name(b[0]): b[0] for b in siape_bancos if b[0]}
-                    
-                    if entity_filter in siape_bancos_normalized:
-                        # Banco do SIAPE: filtrar por source e fazer join com SiapeLine
-                        if not client_joined:
-                            qry = qry.join(Client, Client.id == Case.client_id)
-                            client_joined = True
-                        qry = qry.join(SiapeLine, SiapeLine.cpf == Client.cpf)
-                        qry = qry.filter(Case.source == 'siape')
-                        qry = qry.filter(SiapeLine.banco_emprestimo == siape_bancos_normalized[entity_filter]).distinct()
+                    matching_entidades = [
+                        e[0] for e in all_entidades
+                        if normalize_bank_name(e[0]) == entity_filter
+                    ]
+                    if matching_entidades:
+                        qry = qry.filter(Case.entidade.in_(matching_entidades))
                     else:
-                        # Para outros bancos, usar lógica de PayrollLine
-                        if not client_joined:
-                            qry = qry.join(Client, Client.id == Case.client_id)
-                            client_joined = True
-                        if not payroll_joined:
-                            qry = qry.join(PayrollLine, PayrollLine.cpf == Client.cpf)
-                            payroll_joined = True
+                        # fallback: match exato
+                        qry = qry.filter(Case.entidade == entity_filter)
 
-                        # Buscar todas as entidades que correspondem ao nome normalizado
-                        all_entities = db.query(PayrollLine.entity_name).filter(
-                            PayrollLine.entity_name.isnot(None)
-                        ).distinct().all()
-                        matching_entities = [e[0] for e in all_entities if normalize_bank_name(e[0]) == entity_filter]
+            # Excluir casos SIAPE/GOV
+            if exclude_siape:
+                qry = qry.filter(Case.source != 'siape')
 
-                        if matching_entities:
-                            qry = qry.filter(PayrollLine.entity_name.in_(matching_entities)).distinct()
-                        else:
-                            # Se não encontrou match normalizado, tentar match exato (fallback)
-                            qry = qry.filter(PayrollLine.entity_name == entity_filter).distinct()
-
-            # Filtro por cargo
+            # Filtro por cargo — usa clients.cargo diretamente
             if cargo:
-                from app.models import PayrollLine
                 if not client_joined:
                     qry = qry.join(Client, Client.id == Case.client_id)
                     client_joined = True
-                if not payroll_joined:
-                    qry = qry.join(PayrollLine, PayrollLine.cpf == Client.cpf)
-                    payroll_joined = True
-                qry = qry.filter(PayrollLine.cargo == cargo).distinct()
+                qry = qry.filter(Client.cargo == cargo).distinct()
 
-            # Busca por nome, CPF OU entidade
+            # Busca por nome, CPF, matrícula ou entidade
             if q and q.strip():
-                from app.models import PayrollLine
                 like = f"%{q.strip()}%"
 
                 if not client_joined:
                     qry = qry.join(Client, Client.id == Case.client_id)
                     client_joined = True
-                if not payroll_joined:
-                    qry = qry.outerjoin(
-                        PayrollLine, PayrollLine.cpf == Client.cpf
-                    )
-                    payroll_joined = True
 
                 qry = qry.filter(
                     or_(
                         Client.name.ilike(like),
                         Client.cpf.ilike(like),
-                        PayrollLine.entity_name.ilike(like)
+                        Client.matricula.ilike(like),
+                        Case.entidade.ilike(like),
                     )
                 ).distinct()
 
@@ -1154,6 +1128,89 @@ def list_cases(
                 "page_size": page_size,
                 "error": str(e),
             }
+
+
+@r.get("/export/csv")
+def export_cases_csv(
+    status: str | None = None,
+    entidade: str | None = None,
+    assigned_user_id: int | None = None,
+    exclude_siape: bool = Query(False),
+    user=Depends(require_roles("admin", "supervisor")),
+):
+    """
+    Exporta casos filtrados em CSV. Apenas admin/supervisor.
+    Filtros: status (separado por vírgula), entidade (banco), assigned_user_id, exclude_siape.
+    """
+    import csv
+    import io
+    from app.routers.clients import normalize_bank_name
+    from sqlalchemy.orm import joinedload
+
+    with SessionLocal() as db:
+        qry = db.query(Case).options(
+            joinedload(Case.client),
+            joinedload(Case.assigned_user),
+        )
+
+        if status:
+            status_list = [s.strip() for s in status.split(",") if s.strip()]
+            if len(status_list) == 1:
+                qry = qry.filter(Case.status == status_list[0])
+            elif len(status_list) > 1:
+                qry = qry.filter(Case.status.in_(status_list))
+
+        if entidade:
+            if entidade.upper() == "SIAPE":
+                qry = qry.filter(Case.source == "siape")
+            else:
+                all_entidades = db.query(Case.entidade).filter(
+                    Case.entidade.isnot(None)
+                ).distinct().all()
+                matching = [e[0] for e in all_entidades if normalize_bank_name(e[0]) == entidade]
+                qry = qry.filter(Case.entidade.in_(matching) if matching else Case.entidade == entidade)
+
+        if exclude_siape:
+            qry = qry.filter(Case.source != "siape")
+
+        if assigned_user_id:
+            qry = qry.filter(Case.assigned_user_id == assigned_user_id)
+
+        qry = qry.order_by(Case.id.desc())
+        cases = qry.all()
+
+        output = io.StringIO()
+        writer = csv.writer(output, delimiter=",", quoting=csv.QUOTE_ALL)
+        writer.writerow([
+            "id", "status", "banco", "agente_responsavel",
+            "nome_cliente", "cpf", "matricula", "telefone", "cargo",
+            "criado_em", "atualizado_em",
+        ])
+
+        for c in cases:
+            cl = c.client
+            writer.writerow([
+                c.id,
+                c.status or "",
+                c.entidade or "",
+                c.assigned_user.name if c.assigned_user else "",
+                cl.name if cl else "",
+                cl.cpf if cl else "",
+                cl.matricula if cl else "",
+                cl.telefone_preferencial if cl else "",
+                cl.cargo if cl else "",
+                c.created_at.strftime("%Y-%m-%d %H:%M") if c.created_at else "",
+                c.last_update_at.strftime("%Y-%m-%d %H:%M") if c.last_update_at else "",
+            ])
+
+        content = output.getvalue()
+        return Response(
+            content=content.encode("utf-8-sig"),  # BOM para Excel abrir corretamente
+            media_type="text/csv; charset=utf-8",
+            headers={
+                "Content-Disposition": 'attachment; filename="casos_export.csv"',
+            },
+        )
 
 
 @r.post("/{case_id}/release")
