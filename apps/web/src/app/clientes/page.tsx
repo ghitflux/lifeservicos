@@ -7,20 +7,70 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Pagination } from "@lifecalling/ui";
 import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import Link from "next/link";
 import { Search, User, FileText, Users, X, Building2, Activity, Target, CheckCircle, TrendingUp, Download } from "lucide-react";
 import { KPICard } from "@lifecalling/ui";
 import { ExportClientsDialog } from "@/components/ExportClientsDialog";
 
+type SiapeMode = "all" | "only" | "exclude";
+
+function SiapeFilter({
+  value,
+  onChange,
+}: {
+  value: SiapeMode;
+  onChange: (value: SiapeMode) => void;
+}) {
+  const options: Array<{ value: SiapeMode; label: string }> = [
+    { value: "all", label: "Todos" },
+    { value: "only", label: "Apenas" },
+    { value: "exclude", label: "Excluir" },
+  ];
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+        SIAPE
+      </label>
+      <div className="flex h-10 items-center rounded-lg border border-border bg-card overflow-hidden">
+        {options.map((option, index) => (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() => onChange(option.value)}
+            className={`flex-1 h-full text-xs font-medium transition-colors ${
+              index > 0 ? "border-l border-border" : ""
+            } ${
+              value === option.value
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted"
+            }`}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function Clientes() {
+  const { user } = useAuth();
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedBanco, setSelectedBanco] = useState<string | null>(null);
   const [selectedCargo, setSelectedCargo] = useState<string | null>(null);
   const [selectedStatus, setSelectedStatus] = useState<string | null>(null);
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+  const [siapeMode, setSiapeMode] = useState<SiapeMode>("all");
   const [semContratos, setSemContratos] = useState<boolean>(false);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const isAdminOrSupervisor =
+    user?.role === "super_admin" ||
+    user?.role === "admin" ||
+    user?.role === "supervisor";
 
   // Query para filtros disponíveis
   const { data: filtersData } = useQuery({
@@ -40,8 +90,31 @@ export default function Clientes() {
     },
   });
 
+  const { data: agentUsers = [] } = useQuery({
+    queryKey: ["users", "clients-agent-filter"],
+    queryFn: async () => {
+      const response = await api.get("/users?active=true&limit=200");
+      return (response.data ?? []).filter((agent: any) =>
+        ["admin", "supervisor", "atendente"].includes(agent.role)
+      );
+    },
+    enabled: isAdminOrSupervisor,
+    staleTime: 60000,
+  });
+
   const { data, isLoading } = useQuery({
-    queryKey: ["/clients", page, pageSize, searchTerm, selectedBanco, selectedCargo, selectedStatus, semContratos],
+    queryKey: [
+      "/clients",
+      page,
+      pageSize,
+      searchTerm,
+      selectedBanco,
+      selectedCargo,
+      selectedStatus,
+      selectedAgentId,
+      siapeMode,
+      semContratos,
+    ],
     queryFn: async () => {
       // Determinar ordenação: se tem filtro de banco, ordenar por contratos daquele banco
       const orderBy = selectedBanco ? `contratos_banco_desc:${selectedBanco}` : "contratos_desc";
@@ -60,12 +133,22 @@ export default function Clientes() {
         params.append("banco", selectedBanco);
       }
 
+      if (siapeMode === "only") {
+        params.set("banco", "SIAPE");
+      } else if (siapeMode === "exclude") {
+        params.append("exclude_siape", "true");
+      }
+
       if (selectedCargo) {
         params.append("cargo", selectedCargo);
       }
 
       if (selectedStatus) {
         params.append("status", selectedStatus);
+      }
+
+      if (selectedAgentId && isAdminOrSupervisor) {
+        params.append("agent_id", selectedAgentId);
       }
 
       if (semContratos) {
@@ -159,7 +242,7 @@ export default function Clientes() {
 
         {/* Filtros Rápidos - Dropdowns */}
         <div className="space-y-3">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className={`grid grid-cols-1 gap-4 ${isAdminOrSupervisor ? "md:grid-cols-4" : "md:grid-cols-3"}`}>
             {/* Dropdown Banco */}
             {filtersData?.bancos && filtersData.bancos.length > 0 && (
               <div className="flex flex-col gap-1.5">
@@ -168,17 +251,43 @@ export default function Clientes() {
                   Banco
                 </label>
                 <select
-                  value={selectedBanco || ""}
+                  value={siapeMode === "only" ? "SIAPE" : selectedBanco || ""}
                   onChange={(e) => {
                     setSelectedBanco(e.target.value || null);
                     setPage(1);
                   }}
+                  disabled={siapeMode === "only"}
                   className="h-10 w-full px-3 py-2 rounded-lg border border-border bg-card text-sm text-foreground transition-colors hover:border-primary focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
                 >
                   <option value="">Todos os bancos</option>
                   {filtersData.bancos.map((banco: any) => (
                     <option key={banco.value} value={banco.value}>
                       {banco.label} ({banco.count})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Dropdown Agente */}
+            {isAdminOrSupervisor && (
+              <div className="flex flex-col gap-1.5">
+                <label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  <User className="h-3.5 w-3.5" />
+                  Agente
+                </label>
+                <select
+                  value={selectedAgentId || ""}
+                  onChange={(e) => {
+                    setSelectedAgentId(e.target.value || null);
+                    setPage(1);
+                  }}
+                  className="h-10 w-full px-3 py-2 rounded-lg border border-border bg-card text-sm text-foreground transition-colors hover:border-primary focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                >
+                  <option value="">Todos os agentes</option>
+                  {agentUsers.map((agent: any) => (
+                    <option key={agent.id} value={agent.id}>
+                      {agent.name}
                     </option>
                   ))}
                 </select>
@@ -236,8 +345,20 @@ export default function Clientes() {
             )}
           </div>
 
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="md:col-span-1">
+              <SiapeFilter
+                value={siapeMode}
+                onChange={(value) => {
+                  setSiapeMode(value);
+                  setPage(1);
+                }}
+              />
+            </div>
+          </div>
+
           {/* Botão Limpar Filtros */}
-          {(selectedBanco || selectedCargo || selectedStatus) && (
+          {(selectedBanco || selectedCargo || selectedStatus || selectedAgentId || siapeMode !== "all") && (
             <div className="flex items-center gap-2">
               <Button
                 variant="outline"
@@ -246,6 +367,8 @@ export default function Clientes() {
                   setSelectedBanco(null);
                   setSelectedCargo(null);
                   setSelectedStatus(null);
+                  setSelectedAgentId(null);
+                  setSiapeMode("all");
                   setPage(1);
                 }}
                 className="h-9"
@@ -362,6 +485,8 @@ export default function Clientes() {
           selectedBanco,
           selectedCargo,
           selectedStatus,
+          selectedAgentId,
+          siapeMode,
           semContratos,
         }}
       />

@@ -23,6 +23,8 @@ interface ExportClientsDialogProps {
     selectedBanco: string | null;
     selectedCargo?: string | null;
     selectedStatus: string | null;
+    selectedAgentId?: string | null;
+    siapeMode?: "all" | "only" | "exclude";
     semContratos: boolean;
   };
 }
@@ -137,11 +139,19 @@ export function ExportClientsDialog({
       if (filters.selectedBanco) {
         params.append("banco", filters.selectedBanco);
       }
+      if (filters.siapeMode === "only") {
+        params.set("banco", "SIAPE");
+      } else if (filters.siapeMode === "exclude") {
+        params.append("exclude_siape", "true");
+      }
       if (filters.selectedCargo) {
         params.append("cargo", filters.selectedCargo);
       }
       if (filters.selectedStatus) {
         params.append("status", filters.selectedStatus);
+      }
+      if (filters.selectedAgentId) {
+        params.append("agent_id", filters.selectedAgentId);
       }
       if (filters.semContratos) {
         params.append("sem_contratos", "true");

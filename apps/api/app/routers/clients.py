@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query  # pyright: ignore[reportMissingImports]
 from sqlalchemy.orm import Session  # pyright: ignore[reportMissingImports]
-from sqlalchemy import func, or_, distinct  # pyright: ignore[reportMissingImports]
+from sqlalchemy import func, or_, distinct, cast, String  # pyright: ignore[reportMissingImports]
 from typing import List
 import csv
 import io
@@ -74,6 +74,122 @@ def get_db():
         db.close()
 
 
+def build_case_agent_filter(agent_id: int):
+    assignment_history_text = cast(Case.assignment_history, String)
+    return or_(
+        Case.assigned_user_id == agent_id,
+        assignment_history_text.like(f'%\"user_id\": {agent_id},%'),
+        assignment_history_text.like(f'%\"user_id\": {agent_id}}}%'),
+        assignment_history_text.like(f'%\"to_user_id\": {agent_id},%'),
+        assignment_history_text.like(f'%\"to_user_id\": {agent_id}}}%'),
+        assignment_history_text.like(f'%\"from_user_id\": {agent_id},%'),
+        assignment_history_text.like(f'%\"from_user_id\": {agent_id}}}%'),
+    )
+
+
+def apply_client_list_filters(
+    clients_query,
+    *,
+    db: Session,
+    user,
+    q: str | None = None,
+    banco: str | None = None,
+    cargo: str | None = None,
+    status: str | None = None,
+    sem_contratos: bool | None = None,
+    exclude_siape: bool = False,
+    agent_id: int | None = None,
+):
+    if q:
+        like = f"%{q}%"
+        clients_query = clients_query.filter(
+            or_(
+                Client.name.ilike(like),
+                Client.cpf.ilike(like),
+                Client.matricula.ilike(like)
+            )
+        )
+
+    if banco:
+        normalized_bank = normalize_bank_name(banco)
+
+        if normalized_bank == "SIAPE":
+            clients_query = clients_query.filter(Case.source == "siape")
+        else:
+            all_entities = db.query(PayrollLine.entity_name).filter(
+                PayrollLine.entity_name.isnot(None)
+            ).distinct().all()
+            matching_entities = [
+                entity_name
+                for (entity_name,) in all_entities
+                if normalize_bank_name(entity_name) == normalized_bank
+            ]
+
+            siape_entities = db.query(SiapeLine.banco_emprestimo).filter(
+                SiapeLine.banco_emprestimo.isnot(None)
+            ).distinct().all()
+            matching_siape_entities = [
+                entity_name
+                for (entity_name,) in siape_entities
+                if normalize_bank_name(entity_name) == normalized_bank
+            ]
+
+            conditions = []
+            if matching_entities:
+                conditions.append(
+                    db.query(PayrollLine.id).filter(
+                        PayrollLine.cpf == Client.cpf,
+                        PayrollLine.entity_name.in_(matching_entities)
+                    ).exists()
+                )
+            if matching_siape_entities:
+                conditions.append(
+                    db.query(SiapeLine.id).filter(
+                        SiapeLine.cpf == Client.cpf,
+                        SiapeLine.banco_emprestimo.in_(matching_siape_entities)
+                    ).exists()
+                )
+                conditions.append(
+                    db.query(Case.id).filter(
+                        Case.client_id == Client.id,
+                        Case.source == "siape",
+                        Case.entidade.in_(matching_siape_entities)
+                    ).exists()
+                )
+
+            if conditions:
+                clients_query = clients_query.filter(or_(*conditions))
+
+    if exclude_siape:
+        clients_query = clients_query.filter(
+            or_(Case.source.is_(None), Case.source != "siape")
+        )
+
+    if cargo:
+        clients_query = clients_query.filter(Client.cargo == cargo)
+
+    if status:
+        clients_query = clients_query.filter(Case.status == status)
+
+    if sem_contratos:
+        clients_query = clients_query.filter(
+            ~db.query(PayrollLine.id).filter(
+                PayrollLine.cpf == Client.cpf,
+                PayrollLine.matricula == Client.matricula
+            ).exists()
+        )
+
+    if agent_id is not None and user.role in ["admin", "supervisor"]:
+        clients_query = clients_query.filter(
+            db.query(Case.id).filter(
+                Case.client_id == Client.id,
+                build_case_agent_filter(agent_id),
+            ).exists()
+        )
+
+    return clients_query
+
+
 @r.get("", response_model=PageOut)
 def list_clients(
     page: int = Query(1, ge=1),
@@ -82,6 +198,8 @@ def list_clients(
     banco: str | None = None,
     cargo: str | None = None,
     status: str | None = None,
+    agent_id: int | None = None,
+    exclude_siape: bool = Query(False),
     sem_contratos: bool | None = None,
     db: Session = Depends(get_db),
     user=Depends(require_roles(
@@ -115,83 +233,18 @@ def list_clients(
         Case, Case.client_id == Client.id
     )
 
-    # Aplicar filtro de busca se fornecido
-    if q:
-        like = f"%{q}%"
-        clients_query = clients_query.filter(
-            or_(
-                Client.name.ilike(like),
-                Client.cpf.ilike(like),
-                Client.matricula.ilike(like)
-            )
-        )
-
-    # Filtrar por banco (entidade importada de PayrollLine ou SIAPE)
-    if banco:
-        normalized_bank = normalize_bank_name(banco)
-
-        if normalized_bank == "SIAPE":
-            # Clientes com casos/importações SIAPE (source = siape)
-            clients_query = clients_query.filter(Case.source == "siape")
-        else:
-            # Entidades de contracheque
-            all_entities = db.query(PayrollLine.entity_name).filter(
-                PayrollLine.entity_name.isnot(None)
-            ).distinct().all()
-            matching_entities = [e[0] for e in all_entities if normalize_bank_name(e[0]) == normalized_bank]
-
-            # Bancos importados via SIAPE (banco_emprestimo)
-            siape_entities = db.query(SiapeLine.banco_emprestimo).filter(
-                SiapeLine.banco_emprestimo.isnot(None)
-            ).distinct().all()
-            matching_siape_entities = [e[0] for e in siape_entities if normalize_bank_name(e[0]) == normalized_bank]
-
-            conditions = []
-            if matching_entities:
-                conditions.append(
-                    db.query(PayrollLine.id).filter(
-                        PayrollLine.cpf == Client.cpf,
-                        PayrollLine.entity_name.in_(matching_entities)
-                    ).exists()
-                )
-            if matching_siape_entities:
-                # via linhas SIAPE
-                conditions.append(
-                    db.query(SiapeLine.id).filter(
-                        SiapeLine.cpf == Client.cpf,
-                        SiapeLine.banco_emprestimo.in_(matching_siape_entities)
-                    ).exists()
-                )
-                # via casos SIAPE com entidade preenchida
-                conditions.append(
-                    db.query(Case.id).filter(
-                        Case.client_id == Client.id,
-                        Case.source == "siape",
-                        Case.entidade.in_(matching_siape_entities)
-                    ).exists()
-                )
-
-            if conditions:
-                clients_query = clients_query.filter(or_(*conditions))
-
-    # Filtrar por cargo
-    if cargo:
-        clients_query = clients_query.filter(Client.cargo == cargo)
-
-    # Filtrar por status do caso
-    if status:
-        clients_query = clients_query.filter(Case.status == status)
-
-    # Filtrar por órgão pagador (orgao do cliente)
-    # Filtrar por clientes sem contratos
-    if sem_contratos:
-        # Clientes que NÃO têm financiamentos
-        clients_query = clients_query.filter(
-            ~db.query(PayrollLine.id).filter(
-                PayrollLine.cpf == Client.cpf,
-                PayrollLine.matricula == Client.matricula
-            ).exists()
-        )
+    clients_query = apply_client_list_filters(
+        clients_query,
+        db=db,
+        user=user,
+        q=q,
+        banco=banco,
+        cargo=cargo,
+        status=status,
+        sem_contratos=sem_contratos,
+        exclude_siape=exclude_siape,
+        agent_id=agent_id,
+    )
 
     # Agrupar antes de contar
     clients_query = clients_query.group_by(
@@ -448,6 +501,8 @@ def export_clients_csv(
     banco: str | None = None,
     cargo: str | None = None,
     status: str | None = None,
+    agent_id: int | None = None,
+    exclude_siape: bool = Query(False),
     sem_contratos: bool | None = None,
     fields: str = Query(default="nome,cpf,matricula,orgao", description="Campos separados por vírgula"),
     db: Session = Depends(get_db),
@@ -496,45 +551,18 @@ def export_clients_csv(
         Case, Case.client_id == Client.id
     )
     
-    # Aplicar filtros
-    if q:
-        like = f"%{q}%"
-        clients_query = clients_query.filter(
-            or_(
-                Client.name.ilike(like),
-                Client.cpf.ilike(like),
-                Client.matricula.ilike(like)
-            )
-        )
-    
-    # Filtrar por banco (entidade importada de PayrollLine)
-    if banco:
-        # Buscar todas as entidades que correspondem ao nome normalizado
-        all_entities = db.query(PayrollLine.entity_name).filter(
-            PayrollLine.entity_name.isnot(None)
-        ).distinct().all()
-        matching_entities = [e[0] for e in all_entities if normalize_bank_name(e[0]) == banco]
-
-        if matching_entities:
-            clients_query = clients_query.join(
-                PayrollLine,
-                PayrollLine.cpf == Client.cpf
-            ).filter(PayrollLine.entity_name.in_(matching_entities))
-
-    # Filtrar por cargo
-    if cargo:
-        clients_query = clients_query.filter(Client.cargo == cargo)
-
-    if status:
-        clients_query = clients_query.filter(Case.status == status)
-    
-    if sem_contratos:
-        clients_query = clients_query.filter(
-            ~db.query(PayrollLine.id).filter(
-                PayrollLine.cpf == Client.cpf,
-                PayrollLine.matricula == Client.matricula
-            ).exists()
-        )
+    clients_query = apply_client_list_filters(
+        clients_query,
+        db=db,
+        user=user,
+        q=q,
+        banco=banco,
+        cargo=cargo,
+        status=status,
+        sem_contratos=sem_contratos,
+        exclude_siape=exclude_siape,
+        agent_id=agent_id,
+    )
     
     # Agrupar por cliente
     clients_query = clients_query.group_by(
