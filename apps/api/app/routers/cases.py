@@ -9,13 +9,13 @@ import os
 import shutil
 from decimal import Decimal
 
-from sqlalchemy import or_, func  # pyright: ignore[reportMissingImports]
+from sqlalchemy import or_, and_, func, cast, String  # pyright: ignore[reportMissingImports]
 from sqlalchemy.orm import Session
 from ..rbac import require_roles
 from ..security import get_current_user, verify_csrf
 from ..db import SessionLocal, get_db
 from ..models import (
-    Case, Client, CaseEvent, Contract, ContractAttachment, Attachment,
+    Case, Client, CaseEvent, Contract, ContractAttachment, Attachment, Simulation,
     ClientPhone, Comment, now_brt, ClientSiapeInfo, SiapeLine
 )
 from ..services.case_scheduler import CaseScheduler
@@ -36,6 +36,14 @@ def _normalize_json(value):
     if isinstance(value, dict):
         return {k: _normalize_json(v) for k, v in value.items()}
     return value
+
+
+def _parse_optional_bool(value):
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        return value
+    return str(value).lower() in ("true", "1", "yes")
 
 
 class PageOut(BaseModel):
@@ -796,9 +804,12 @@ def list_cases(
     entidade: str | None = None,  # Filtro por entidade/banco
     entity: str | None = None,  # Alias legado
     cargo: str | None = None,  # Filtro por cargo
+    agent_id: int | None = Query(None),  # Filtro por agente atual/histórico
     exclude_siape: bool = Query(False),  # Excluir casos SIAPE/GOV
     assigned: str | None = None,  # '0' = não atribuídos, '1' = atribuídos
     mine: str | bool = Query(False),
+    never_attended: str | bool | None = Query(None),
+    returned_to_pipeline: str | bool | None = Query(None),
     order: str = Query("id_desc"),
     created_after: str | None = None,
     created_before: str | None = None,
@@ -813,6 +824,8 @@ def list_cases(
         try:
             # Normalizar mine para boolean
             mine_bool = mine if isinstance(mine, bool) else str(mine).lower() in ('true', '1', 'yes')
+            never_attended_bool = _parse_optional_bool(never_attended)
+            returned_to_pipeline_bool = _parse_optional_bool(returned_to_pipeline)
 
             # Usar entidade ou entity (alias legado)
             entity_filter = entidade or entity
@@ -860,6 +873,91 @@ def list_cases(
                             pass
                 # Se assigned is None, admin vê todos os casos
                 # (sem filtro de assignment)
+
+            if agent_id is not None and user.role in ["admin", "supervisor"]:
+                assignment_history_text = cast(Case.assignment_history, String)
+                qry = qry.filter(
+                    or_(
+                        Case.assigned_user_id == agent_id,
+                        assignment_history_text.like(f'%\"user_id\": {agent_id},%'),
+                        assignment_history_text.like(f'%\"user_id\": {agent_id}}}%'),
+                        assignment_history_text.like(f'%\"to_user_id\": {agent_id},%'),
+                        assignment_history_text.like(f'%\"to_user_id\": {agent_id}}}%'),
+                        assignment_history_text.like(f'%\"from_user_id\": {agent_id},%'),
+                        assignment_history_text.like(f'%\"from_user_id\": {agent_id}}}%'),
+                    )
+                )
+
+            if never_attended_bool is not None:
+                has_assignment_events = (
+                    db.query(CaseEvent.id)
+                    .filter(
+                        CaseEvent.case_id == Case.id,
+                        CaseEvent.type.in_(["case.assigned", "case.reassigned"]),
+                    )
+                    .exists()
+                )
+                has_effectivated_contract = (
+                    db.query(Contract.id)
+                    .filter(Contract.case_id == Case.id)
+                    .exists()
+                )
+                has_effectivated_event = (
+                    db.query(CaseEvent.id)
+                    .filter(
+                        CaseEvent.case_id == Case.id,
+                        CaseEvent.type == "finance.disbursed",
+                    )
+                    .exists()
+                )
+
+                literal_new_case = and_(
+                    Case.assigned_user_id.is_(None),
+                    Case.assigned_at.is_(None),
+                    or_(
+                        Case.assignment_history.is_(None),
+                        cast(Case.assignment_history, String) == "[]",
+                    ),
+                    ~has_assignment_events,
+                    ~has_effectivated_contract,
+                    ~has_effectivated_event,
+                )
+
+                qry = qry.filter(
+                    literal_new_case if never_attended_bool else ~literal_new_case
+                )
+
+            if returned_to_pipeline_bool is not None:
+                has_return_event = (
+                    db.query(CaseEvent.id)
+                    .filter(
+                        CaseEvent.case_id == Case.id,
+                        CaseEvent.type.in_([
+                            "case.returned_to_pipeline",
+                            "case.auto_expired",
+                            "case.expired",
+                        ]),
+                    )
+                    .exists()
+                )
+                was_previously_assigned = or_(
+                    cast(Case.assignment_history, String) != "[]",
+                    db.query(CaseEvent.id)
+                    .filter(
+                        CaseEvent.case_id == Case.id,
+                        CaseEvent.type.in_(["case.assigned", "case.reassigned"]),
+                    )
+                    .exists()
+                )
+                returned_case = and_(
+                    Case.status == "novo",
+                    Case.assigned_user_id.is_(None),
+                    has_return_event,
+                    was_previously_assigned,
+                )
+                qry = qry.filter(
+                    returned_case if returned_to_pipeline_bool else ~returned_case
+                )
 
             if status:
                 status_list = [s.strip() for s in status.split(",") if s.strip()]
@@ -1132,15 +1230,20 @@ def list_cases(
 
 @r.get("/export/csv")
 def export_cases_csv(
+    q: str | None = None,
     status: str | None = None,
     entidade: str | None = None,
+    cargo: str | None = None,
+    agent_id: int | None = None,
     assigned_user_id: int | None = None,
+    never_attended: str | bool | None = Query(None),
+    returned_to_pipeline: str | bool | None = Query(None),
     exclude_siape: bool = Query(False),
     user=Depends(require_roles("admin", "supervisor")),
 ):
     """
     Exporta casos filtrados em CSV. Apenas admin/supervisor.
-    Filtros: status (separado por vírgula), entidade (banco), assigned_user_id, exclude_siape.
+    Filtros: status, busca, banco, cargo, agente, casos novos, casos retornados e exclude_siape.
     """
     import csv
     import io
@@ -1152,6 +1255,9 @@ def export_cases_csv(
             joinedload(Case.client),
             joinedload(Case.assigned_user),
         )
+        client_joined = False
+        never_attended_bool = _parse_optional_bool(never_attended)
+        returned_to_pipeline_bool = _parse_optional_bool(returned_to_pipeline)
 
         if status:
             status_list = [s.strip() for s in status.split(",") if s.strip()]
@@ -1170,11 +1276,115 @@ def export_cases_csv(
                 matching = [e[0] for e in all_entidades if normalize_bank_name(e[0]) == entidade]
                 qry = qry.filter(Case.entidade.in_(matching) if matching else Case.entidade == entidade)
 
+        if cargo:
+            if not client_joined:
+                qry = qry.join(Client, Client.id == Case.client_id)
+                client_joined = True
+            qry = qry.filter(Client.cargo == cargo).distinct()
+
+        if q and q.strip():
+            like = f"%{q.strip()}%"
+            if not client_joined:
+                qry = qry.join(Client, Client.id == Case.client_id)
+                client_joined = True
+            qry = qry.filter(
+                or_(
+                    Client.name.ilike(like),
+                    Client.cpf.ilike(like),
+                    Client.matricula.ilike(like),
+                    Case.entidade.ilike(like),
+                )
+            ).distinct()
+
         if exclude_siape:
             qry = qry.filter(Case.source != "siape")
 
         if assigned_user_id:
             qry = qry.filter(Case.assigned_user_id == assigned_user_id)
+
+        if agent_id is not None:
+            assignment_history_text = cast(Case.assignment_history, String)
+            qry = qry.filter(
+                or_(
+                    Case.assigned_user_id == agent_id,
+                    assignment_history_text.like(f'%\"user_id\": {agent_id},%'),
+                    assignment_history_text.like(f'%\"user_id\": {agent_id}}}%'),
+                    assignment_history_text.like(f'%\"to_user_id\": {agent_id},%'),
+                    assignment_history_text.like(f'%\"to_user_id\": {agent_id}}}%'),
+                    assignment_history_text.like(f'%\"from_user_id\": {agent_id},%'),
+                    assignment_history_text.like(f'%\"from_user_id\": {agent_id}}}%'),
+                )
+            )
+
+        if never_attended_bool is not None:
+            has_assignment_events = (
+                db.query(CaseEvent.id)
+                .filter(
+                    CaseEvent.case_id == Case.id,
+                    CaseEvent.type.in_(["case.assigned", "case.reassigned"]),
+                )
+                .exists()
+            )
+            has_effectivated_contract = (
+                db.query(Contract.id)
+                .filter(Contract.case_id == Case.id)
+                .exists()
+            )
+            has_effectivated_event = (
+                db.query(CaseEvent.id)
+                .filter(
+                    CaseEvent.case_id == Case.id,
+                    CaseEvent.type == "finance.disbursed",
+                )
+                .exists()
+            )
+
+            literal_new_case = and_(
+                Case.assigned_user_id.is_(None),
+                Case.assigned_at.is_(None),
+                or_(
+                    Case.assignment_history.is_(None),
+                    cast(Case.assignment_history, String) == "[]",
+                ),
+                ~has_assignment_events,
+                ~has_effectivated_contract,
+                ~has_effectivated_event,
+            )
+            qry = qry.filter(
+                literal_new_case if never_attended_bool else ~literal_new_case
+            )
+
+        if returned_to_pipeline_bool is not None:
+            has_return_event = (
+                db.query(CaseEvent.id)
+                .filter(
+                    CaseEvent.case_id == Case.id,
+                    CaseEvent.type.in_([
+                        "case.returned_to_pipeline",
+                        "case.auto_expired",
+                        "case.expired",
+                    ]),
+                )
+                .exists()
+            )
+            was_previously_assigned = or_(
+                cast(Case.assignment_history, String) != "[]",
+                db.query(CaseEvent.id)
+                .filter(
+                    CaseEvent.case_id == Case.id,
+                    CaseEvent.type.in_(["case.assigned", "case.reassigned"]),
+                )
+                .exists()
+            )
+            returned_case = and_(
+                Case.status == "novo",
+                Case.assigned_user_id.is_(None),
+                has_return_event,
+                was_previously_assigned,
+            )
+            qry = qry.filter(
+                returned_case if returned_to_pipeline_bool else ~returned_case
+            )
 
         qry = qry.order_by(Case.id.desc())
         cases = qry.all()

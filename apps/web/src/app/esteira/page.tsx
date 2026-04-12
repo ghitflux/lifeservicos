@@ -34,6 +34,9 @@ interface Case {
   valor_mensalidade?: number;
 }
 
+const DEFAULT_TAB = "never_attended";
+const RETURNED_TAB = "returned_to_pipeline";
+
 // Combobox de banco com autocomplete
 function BancoCombobox({
   value,
@@ -181,7 +184,7 @@ function EsteiraPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState("global");
+  const [activeTab, setActiveTab] = useState(DEFAULT_TAB);
 
   const isAdminOrSupervisor = user?.role === 'super_admin' || user?.role === 'admin' || user?.role === 'supervisor';
 
@@ -192,8 +195,26 @@ function EsteiraPageContent() {
   const [globalSelectedBanco, setGlobalSelectedBanco] = useState<string | null>(null);
   const [globalSelectedCargo, setGlobalSelectedCargo] = useState<string | null>(null);
   const [globalSelectedStatus, setGlobalSelectedStatus] = useState<string | null>(null);
+  const [globalSelectedAgentId, setGlobalSelectedAgentId] = useState<string | null>(null);
   const [globalSiapeMode, setGlobalSiapeMode] = useState<SiapeMode>('all');
   const [exportingCsv, setExportingCsv] = useState(false);
+
+  // Estados — Casos Novos
+  const [neverAttendedPage, setNeverAttendedPage] = useState(1);
+  const [neverAttendedPageSize, setNeverAttendedPageSize] = useState(20);
+  const [neverAttendedSearchTerm, setNeverAttendedSearchTerm] = useState("");
+  const [neverAttendedSelectedBanco, setNeverAttendedSelectedBanco] = useState<string | null>(null);
+  const [neverAttendedSelectedCargo, setNeverAttendedSelectedCargo] = useState<string | null>(null);
+  const [neverAttendedSiapeMode, setNeverAttendedSiapeMode] = useState<SiapeMode>('all');
+
+  // Estados — Casos Retornados
+  const [returnedPage, setReturnedPage] = useState(1);
+  const [returnedPageSize, setReturnedPageSize] = useState(20);
+  const [returnedSearchTerm, setReturnedSearchTerm] = useState("");
+  const [returnedSelectedBanco, setReturnedSelectedBanco] = useState<string | null>(null);
+  const [returnedSelectedCargo, setReturnedSelectedCargo] = useState<string | null>(null);
+  const [returnedSelectedAgentId, setReturnedSelectedAgentId] = useState<string | null>(null);
+  const [returnedSiapeMode, setReturnedSiapeMode] = useState<SiapeMode>('all');
 
   // Estados — Meus Atendimentos
   const [myPage, setMyPage] = useState(1);
@@ -216,13 +237,23 @@ function EsteiraPageContent() {
   // Reset página quando filtros mudam
   useEffect(() => {
     setGlobalPage(1);
-  }, [globalSelectedBanco, globalSelectedCargo, globalSelectedStatus, globalSearchTerm, globalSiapeMode]);
+  }, [globalSelectedBanco, globalSelectedCargo, globalSelectedStatus, globalSelectedAgentId, globalSearchTerm, globalSiapeMode]);
+
+  useEffect(() => {
+    setNeverAttendedPage(1);
+  }, [neverAttendedSelectedBanco, neverAttendedSelectedCargo, neverAttendedSearchTerm, neverAttendedSiapeMode]);
+
+  useEffect(() => {
+    setReturnedPage(1);
+  }, [returnedSelectedBanco, returnedSelectedCargo, returnedSelectedAgentId, returnedSearchTerm, returnedSiapeMode]);
 
   useEffect(() => {
     setMyPage(1);
   }, [mySelectedBanco, mySelectedCargo, mySelectedStatus, mySearchTerm, mySiapeMode]);
 
   useEffect(() => { setGlobalPage(1); }, [globalPageSize]);
+  useEffect(() => { setNeverAttendedPage(1); }, [neverAttendedPageSize]);
+  useEffect(() => { setReturnedPage(1); }, [returnedPageSize]);
   useEffect(() => { setMyPage(1); }, [myPageSize]);
 
   // Restaurar estado da esteira quando a página carregar
@@ -231,28 +262,67 @@ function EsteiraPageContent() {
     const savedTab = searchParams.get('tab');
     const savedStatus = searchParams.get('status');
     const savedSearch = searchParams.get('search');
+    const savedBanco = searchParams.get('banco');
+    const savedCargo = searchParams.get('cargo');
+    const savedAgentId = searchParams.get('agent_id');
+    const savedSiape = searchParams.get('siape');
 
-    if (savedTab && (savedTab === 'mine' || savedTab === 'global')) {
+    if (savedTab && (savedTab === 'mine' || savedTab === 'global' || savedTab === DEFAULT_TAB || savedTab === RETURNED_TAB)) {
       setActiveTab(savedTab);
     }
 
     if (savedPage) {
       const pageNum = parseInt(savedPage);
-      const tabToUse = savedTab || 'global';
+      const tabToUse = savedTab || DEFAULT_TAB;
       if (tabToUse === 'mine') setMyPage(pageNum);
+      else if (tabToUse === DEFAULT_TAB) setNeverAttendedPage(pageNum);
+      else if (tabToUse === RETURNED_TAB) setReturnedPage(pageNum);
       else setGlobalPage(pageNum);
     }
 
     if (savedStatus) {
-      const tabToUse = savedTab || 'global';
-      if (tabToUse === 'mine') setMySelectedStatus([savedStatus] as any);
-      else setGlobalSelectedStatus([savedStatus] as any);
+      const tabToUse = savedTab || DEFAULT_TAB;
+      const firstStatus = savedStatus.split(',').map((item) => item.trim()).find(Boolean) || null;
+      if (tabToUse === 'mine') setMySelectedStatus(firstStatus);
+      else if (tabToUse === 'global') setGlobalSelectedStatus(firstStatus);
     }
 
     if (savedSearch) {
-      const tabToUse = savedTab || 'global';
+      const tabToUse = savedTab || DEFAULT_TAB;
       if (tabToUse === 'mine') setMySearchTerm(savedSearch);
+      else if (tabToUse === DEFAULT_TAB) setNeverAttendedSearchTerm(savedSearch);
+      else if (tabToUse === RETURNED_TAB) setReturnedSearchTerm(savedSearch);
       else setGlobalSearchTerm(savedSearch);
+    }
+
+    if (savedBanco) {
+      const tabToUse = savedTab || DEFAULT_TAB;
+      if (tabToUse === 'mine') setMySelectedBanco(savedBanco);
+      else if (tabToUse === DEFAULT_TAB) setNeverAttendedSelectedBanco(savedBanco);
+      else if (tabToUse === RETURNED_TAB) setReturnedSelectedBanco(savedBanco);
+      else setGlobalSelectedBanco(savedBanco);
+    }
+
+    if (savedCargo) {
+      const tabToUse = savedTab || DEFAULT_TAB;
+      if (tabToUse === 'mine') setMySelectedCargo(savedCargo);
+      else if (tabToUse === DEFAULT_TAB) setNeverAttendedSelectedCargo(savedCargo);
+      else if (tabToUse === RETURNED_TAB) setReturnedSelectedCargo(savedCargo);
+      else setGlobalSelectedCargo(savedCargo);
+    }
+
+    if (savedAgentId) {
+      const tabToUse = savedTab || DEFAULT_TAB;
+      if (tabToUse === RETURNED_TAB) setReturnedSelectedAgentId(savedAgentId);
+      else if (tabToUse === 'global') setGlobalSelectedAgentId(savedAgentId);
+    }
+
+    if (savedSiape === 'all' || savedSiape === 'only' || savedSiape === 'exclude') {
+      const tabToUse = savedTab || DEFAULT_TAB;
+      if (tabToUse === 'mine') setMySiapeMode(savedSiape);
+      else if (tabToUse === DEFAULT_TAB) setNeverAttendedSiapeMode(savedSiape);
+      else if (tabToUse === RETURNED_TAB) setReturnedSiapeMode(savedSiape);
+      else setGlobalSiapeMode(savedSiape);
     }
   }, [searchParams]);
 
@@ -263,6 +333,18 @@ function EsteiraPageContent() {
     if (globalSiapeMode === 'only') return { banco: 'SIAPE', exclude_siape: undefined };
     if (globalSiapeMode === 'exclude') return { banco: globalSelectedBanco || undefined, exclude_siape: true };
     return { banco: globalSelectedBanco || undefined, exclude_siape: undefined };
+  };
+
+  const resolveNeverAttendedBancoParams = () => {
+    if (neverAttendedSiapeMode === 'only') return { banco: 'SIAPE', exclude_siape: undefined };
+    if (neverAttendedSiapeMode === 'exclude') return { banco: neverAttendedSelectedBanco || undefined, exclude_siape: true };
+    return { banco: neverAttendedSelectedBanco || undefined, exclude_siape: undefined };
+  };
+
+  const resolveReturnedBancoParams = () => {
+    if (returnedSiapeMode === 'only') return { banco: 'SIAPE', exclude_siape: undefined };
+    if (returnedSiapeMode === 'exclude') return { banco: returnedSelectedBanco || undefined, exclude_siape: true };
+    return { banco: returnedSelectedBanco || undefined, exclude_siape: undefined };
   };
 
   const resolveMyBancoParams = () => {
@@ -276,7 +358,7 @@ function EsteiraPageContent() {
     queryKey: [
       "cases", "global",
       globalPage, globalPageSize,
-      globalSelectedBanco, globalSelectedCargo, globalSelectedStatus,
+      globalSelectedBanco, globalSelectedCargo, globalSelectedStatus, globalSelectedAgentId,
       globalSearchTerm, globalSiapeMode,
     ],
     queryFn: async () => {
@@ -290,6 +372,7 @@ function EsteiraPageContent() {
               page: globalPage, page_size: globalPageSize, order: orderBy,
               q: globalSearchTerm, banco, cargo: globalSelectedCargo || undefined,
               status: globalSelectedStatus ? [globalSelectedStatus] : undefined,
+              agent_id: globalSelectedAgentId ? Number(globalSelectedAgentId) : undefined,
               exclude_siape,
             }
           : {
@@ -311,6 +394,81 @@ function EsteiraPageContent() {
   const globalCases = globalData?.items ?? [];
   const globalTotal = globalData?.total ?? 0;
   const globalTotalPages = Math.ceil(globalTotal / globalPageSize);
+
+  // Query — Casos Novos
+  const { data: neverAttendedData, isLoading: loadingNeverAttended, error: errorNeverAttended } = useQuery({
+    queryKey: [
+      "cases", "never_attended",
+      neverAttendedPage, neverAttendedPageSize,
+      neverAttendedSelectedBanco, neverAttendedSelectedCargo,
+      neverAttendedSearchTerm, neverAttendedSiapeMode,
+    ],
+    queryFn: async () => {
+      const { banco, exclude_siape } = resolveNeverAttendedBancoParams();
+      const orderBy = banco ? `financiamentos_banco_desc:${banco}` : "financiamentos_desc";
+
+      const params = buildCasesQuery({
+        page: neverAttendedPage,
+        page_size: neverAttendedPageSize,
+        order: orderBy,
+        q: neverAttendedSearchTerm,
+        banco,
+        cargo: neverAttendedSelectedCargo || undefined,
+        status: ["novo"],
+        never_attended: true,
+        exclude_siape,
+      });
+
+      const response = await api.get(`/cases?${params.toString()}`);
+      return response.data;
+    },
+    staleTime: 5000,
+    refetchInterval: 10000,
+    refetchOnWindowFocus: true,
+    retry: 2,
+  });
+
+  const neverAttendedCases = neverAttendedData?.items ?? [];
+  const neverAttendedTotal = neverAttendedData?.total ?? 0;
+  const neverAttendedTotalPages = Math.ceil(neverAttendedTotal / neverAttendedPageSize);
+
+  // Query — Casos Retornados
+  const { data: returnedData, isLoading: loadingReturned, error: errorReturned } = useQuery({
+    queryKey: [
+      "cases", "returned_to_pipeline",
+      returnedPage, returnedPageSize,
+      returnedSelectedBanco, returnedSelectedCargo, returnedSelectedAgentId,
+      returnedSearchTerm, returnedSiapeMode,
+    ],
+    queryFn: async () => {
+      const { banco, exclude_siape } = resolveReturnedBancoParams();
+      const orderBy = banco ? `financiamentos_banco_desc:${banco}` : "financiamentos_desc";
+
+      const params = buildCasesQuery({
+        page: returnedPage,
+        page_size: returnedPageSize,
+        order: orderBy,
+        q: returnedSearchTerm,
+        banco,
+        cargo: returnedSelectedCargo || undefined,
+        agent_id: returnedSelectedAgentId ? Number(returnedSelectedAgentId) : undefined,
+        status: ["novo"],
+        returned_to_pipeline: true,
+        exclude_siape,
+      });
+
+      const response = await api.get(`/cases?${params.toString()}`);
+      return response.data;
+    },
+    staleTime: 5000,
+    refetchInterval: 10000,
+    refetchOnWindowFocus: true,
+    retry: 2,
+  });
+
+  const returnedCases = returnedData?.items ?? [];
+  const returnedTotal = returnedData?.total ?? 0;
+  const returnedTotalPages = Math.ceil(returnedTotal / returnedPageSize);
 
   // Query — Meus Atendimentos
   const { data: myData, isLoading: loadingMine, error: errorMine } = useQuery({
@@ -423,8 +581,30 @@ function EsteiraPageContent() {
     setExportingCsv(true);
     try {
       const params = new URLSearchParams();
-      if (globalSelectedStatus) params.set("status", globalSelectedStatus);
-      const { banco, exclude_siape } = resolveGlobalBancoParams();
+      let banco: string | undefined;
+      let exclude_siape: boolean | undefined;
+
+      if (activeTab === DEFAULT_TAB) {
+        if (neverAttendedSearchTerm) params.set("q", neverAttendedSearchTerm);
+        if (neverAttendedSelectedCargo) params.set("cargo", neverAttendedSelectedCargo);
+        params.set("status", "novo");
+        params.set("never_attended", "true");
+        ({ banco, exclude_siape } = resolveNeverAttendedBancoParams());
+      } else if (activeTab === RETURNED_TAB) {
+        if (returnedSearchTerm) params.set("q", returnedSearchTerm);
+        if (returnedSelectedCargo) params.set("cargo", returnedSelectedCargo);
+        if (returnedSelectedAgentId) params.set("agent_id", returnedSelectedAgentId);
+        params.set("status", "novo");
+        params.set("returned_to_pipeline", "true");
+        ({ banco, exclude_siape } = resolveReturnedBancoParams());
+      } else {
+        if (globalSearchTerm) params.set("q", globalSearchTerm);
+        if (globalSelectedCargo) params.set("cargo", globalSelectedCargo);
+        if (globalSelectedStatus) params.set("status", globalSelectedStatus);
+        if (globalSelectedAgentId) params.set("agent_id", globalSelectedAgentId);
+        ({ banco, exclude_siape } = resolveGlobalBancoParams());
+      }
+
       if (banco) params.set("entidade", banco);
       if (exclude_siape) params.set("exclude_siape", "true");
 
@@ -446,15 +626,73 @@ function EsteiraPageContent() {
   const handlePegarAtendimentoEsteira = (caseId: number) => assignCaseEsteiraMutation.mutate(caseId);
 
   const handleViewCase = (caseId: number) => {
-    const currentPage = activeTab === 'mine' ? myPage : globalPage;
-    const currentStatusFilter = activeTab === 'mine' ? mySelectedStatus : globalSelectedStatus;
-    const currentSearchTerm = activeTab === 'mine' ? mySearchTerm : globalSearchTerm;
-    const currentList = activeTab === 'mine' ? myCases : globalCases;
-    const tabToSave = activeTab === 'mine' ? 'mine' : 'global';
+    const isMyTab = activeTab === 'mine';
+    const isNeverAttendedTab = activeTab === DEFAULT_TAB;
+    const isReturnedTab = activeTab === RETURNED_TAB;
+    const currentPage = isMyTab
+      ? myPage
+      : isReturnedTab
+        ? returnedPage
+        : isNeverAttendedTab
+        ? neverAttendedPage
+        : globalPage;
+    const currentStatusFilter = isNeverAttendedTab || isReturnedTab
+      ? null
+      : isMyTab
+        ? mySelectedStatus
+        : globalSelectedStatus;
+    const currentSearchTerm = isMyTab
+      ? mySearchTerm
+      : isReturnedTab
+        ? returnedSearchTerm
+      : isNeverAttendedTab
+        ? neverAttendedSearchTerm
+        : globalSearchTerm;
+    const currentBancoFilter = isMyTab
+      ? mySelectedBanco
+      : isReturnedTab
+        ? returnedSelectedBanco
+        : isNeverAttendedTab
+        ? neverAttendedSelectedBanco
+        : globalSelectedBanco;
+    const currentCargoFilter = isMyTab
+      ? mySelectedCargo
+      : isReturnedTab
+        ? returnedSelectedCargo
+        : isNeverAttendedTab
+        ? neverAttendedSelectedCargo
+        : globalSelectedCargo;
+    const currentAgentIdFilter = isReturnedTab
+      ? returnedSelectedAgentId
+      : isMyTab || isNeverAttendedTab
+        ? null
+        : globalSelectedAgentId;
+    const currentSiapeMode = isMyTab
+      ? mySiapeMode
+      : isReturnedTab
+        ? returnedSiapeMode
+      : isNeverAttendedTab
+        ? neverAttendedSiapeMode
+        : globalSiapeMode;
+    const currentList = isMyTab
+      ? myCases
+      : isReturnedTab
+        ? returnedCases
+      : isNeverAttendedTab
+        ? neverAttendedCases
+        : globalCases;
+    const tabToSave = isMyTab ? 'mine' : isReturnedTab ? RETURNED_TAB : isNeverAttendedTab ? DEFAULT_TAB : 'global';
 
     sessionStorage.setItem('esteira-page', currentPage.toString());
     sessionStorage.setItem('esteira-tab', tabToSave);
-    sessionStorage.setItem('esteira-filters', JSON.stringify({ status: currentStatusFilter, search: currentSearchTerm }));
+    sessionStorage.setItem('esteira-filters', JSON.stringify({
+      status: currentStatusFilter,
+      search: currentSearchTerm,
+      banco: currentBancoFilter,
+      cargo: currentCargoFilter,
+      agent_id: currentAgentIdFilter,
+      siape: currentSiapeMode,
+    }));
     sessionStorage.setItem('esteira-case-ids', JSON.stringify((currentList ?? []).map((c) => c.id)));
 
     router.push(`/casos/${caseId}`);
@@ -466,6 +704,18 @@ function EsteiraPageContent() {
       const response = await api.get("/clients/filters");
       return response.data;
     },
+    staleTime: 60000,
+  });
+
+  const { data: agentUsers = [] } = useQuery({
+    queryKey: ["users", "pipeline-agent-filter"],
+    queryFn: async () => {
+      const response = await api.get("/users?active=true&limit=200");
+      return (response.data ?? []).filter((u: any) =>
+        ["admin", "supervisor", "atendente"].includes(u.role)
+      );
+    },
+    enabled: isAdminOrSupervisor,
     staleTime: 60000,
   });
 
@@ -511,7 +761,9 @@ function EsteiraPageContent() {
     );
   };
 
-  const globalHasFilters = globalSelectedBanco || globalSelectedCargo || globalSelectedStatus || globalSiapeMode !== 'all';
+  const neverAttendedHasFilters = neverAttendedSelectedBanco || neverAttendedSelectedCargo || neverAttendedSiapeMode !== 'all';
+  const returnedHasFilters = returnedSelectedBanco || returnedSelectedCargo || returnedSelectedAgentId || returnedSiapeMode !== 'all';
+  const globalHasFilters = globalSelectedBanco || globalSelectedCargo || globalSelectedStatus || globalSelectedAgentId || globalSiapeMode !== 'all';
   const myHasFilters = mySelectedBanco || mySelectedCargo || mySelectedStatus || mySiapeMode !== 'all';
 
   return (
@@ -522,9 +774,247 @@ function EsteiraPageContent() {
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
+          <TabsTrigger value={DEFAULT_TAB}>Casos Novos ({neverAttendedTotal})</TabsTrigger>
+          <TabsTrigger value={RETURNED_TAB}>Casos Retornados ({returnedTotal})</TabsTrigger>
           <TabsTrigger value="global">Global ({globalTotal})</TabsTrigger>
           <TabsTrigger value="mine">Meus Atendimentos ({myTotal})</TabsTrigger>
         </TabsList>
+
+        {/* ===== CASOS NOVOS ===== */}
+        <TabsContent value={DEFAULT_TAB} className="mt-6">
+          <div className="space-y-6">
+            <Card className="p-4 space-y-4">
+              <div className="flex items-center gap-4">
+                <div className="relative flex-1 max-w-md">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Buscar por nome, CPF ou matrícula..."
+                    value={neverAttendedSearchTerm}
+                    onChange={(e) => setNeverAttendedSearchTerm(e.target.value)}
+                    className="pl-10"
+                  />
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  {neverAttendedTotal} {neverAttendedTotal === 1 ? 'caso novo' : 'casos novos'}
+                </div>
+                {isAdminOrSupervisor && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleExportCsv}
+                    disabled={exportingCsv}
+                    className="h-9 gap-2"
+                  >
+                    <Download className="h-4 w-4" />
+                    {exportingCsv ? "Exportando..." : "Exportar CSV"}
+                  </Button>
+                )}
+              </div>
+
+              <div className="space-y-3">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  {bancos.length > 0 && (
+                    <div className="flex flex-col gap-1.5">
+                      <label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                        <Building2 className="h-3.5 w-3.5" />
+                        Banco
+                      </label>
+                      <BancoCombobox
+                        value={neverAttendedSiapeMode === 'only' ? 'SIAPE' : neverAttendedSelectedBanco}
+                        onSelect={setNeverAttendedSelectedBanco}
+                        bancos={bancos}
+                      />
+                    </div>
+                  )}
+
+                  {filtersData?.cargos && filtersData.cargos.length > 0 && (
+                    <div className="flex flex-col gap-1.5">
+                      <label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                        <User className="h-3.5 w-3.5" />
+                        Cargo
+                      </label>
+                      <select
+                        value={neverAttendedSelectedCargo || ""}
+                        onChange={(e) => setNeverAttendedSelectedCargo(e.target.value || null)}
+                        className="h-10 w-full px-3 py-2 rounded-lg border border-border bg-card text-sm text-foreground transition-colors hover:border-primary focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                      >
+                        <option value="">Todos os cargos</option>
+                        {filtersData.cargos.map((cargo: any) => (
+                          <option key={cargo.value} value={cargo.value}>
+                            {cargo.label} ({cargo.count})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  <SiapeFilter value={neverAttendedSiapeMode} onChange={setNeverAttendedSiapeMode} />
+                </div>
+
+                {neverAttendedHasFilters && (
+                  <div className="flex items-center pt-1">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setNeverAttendedSelectedBanco(null);
+                        setNeverAttendedSelectedCargo(null);
+                        setNeverAttendedSiapeMode('all');
+                      }}
+                      className="h-8"
+                    >
+                      <X className="h-3.5 w-3.5 mr-1.5" />
+                      Limpar filtros
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </Card>
+
+            {renderCaseList(neverAttendedCases, true, loadingNeverAttended, errorNeverAttended)}
+
+            {neverAttendedTotal > 0 && (
+              <Pagination
+                currentPage={neverAttendedPage}
+                totalPages={neverAttendedTotalPages}
+                totalItems={neverAttendedTotal}
+                itemsPerPage={neverAttendedPageSize}
+                onPageChange={setNeverAttendedPage}
+                onItemsPerPageChange={(size) => setNeverAttendedPageSize(size)}
+                itemsPerPageOptions={[20, 50, 100]}
+              />
+            )}
+          </div>
+        </TabsContent>
+
+        {/* ===== CASOS RETORNADOS ===== */}
+        <TabsContent value={RETURNED_TAB} className="mt-6">
+          <div className="space-y-6">
+            <Card className="p-4 space-y-4">
+              <div className="flex items-center gap-4">
+                <div className="relative flex-1 max-w-md">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Buscar por nome, CPF ou matrícula..."
+                    value={returnedSearchTerm}
+                    onChange={(e) => setReturnedSearchTerm(e.target.value)}
+                    className="pl-10"
+                  />
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  {returnedTotal} {returnedTotal === 1 ? 'caso retornado' : 'casos retornados'}
+                </div>
+                {isAdminOrSupervisor && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleExportCsv}
+                    disabled={exportingCsv}
+                    className="h-9 gap-2"
+                  >
+                    <Download className="h-4 w-4" />
+                    {exportingCsv ? "Exportando..." : "Exportar CSV"}
+                  </Button>
+                )}
+              </div>
+
+              <div className="space-y-3">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {bancos.length > 0 && (
+                    <div className="flex flex-col gap-1.5">
+                      <label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                        <Building2 className="h-3.5 w-3.5" />
+                        Banco
+                      </label>
+                      <BancoCombobox
+                        value={returnedSiapeMode === 'only' ? 'SIAPE' : returnedSelectedBanco}
+                        onSelect={setReturnedSelectedBanco}
+                        bancos={bancos}
+                      />
+                    </div>
+                  )}
+
+                  {filtersData?.cargos && filtersData.cargos.length > 0 && (
+                    <div className="flex flex-col gap-1.5">
+                      <label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                        <User className="h-3.5 w-3.5" />
+                        Cargo
+                      </label>
+                      <select
+                        value={returnedSelectedCargo || ""}
+                        onChange={(e) => setReturnedSelectedCargo(e.target.value || null)}
+                        className="h-10 w-full px-3 py-2 rounded-lg border border-border bg-card text-sm text-foreground transition-colors hover:border-primary focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                      >
+                        <option value="">Todos os cargos</option>
+                        {filtersData.cargos.map((cargo: any) => (
+                          <option key={cargo.value} value={cargo.value}>
+                            {cargo.label} ({cargo.count})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {isAdminOrSupervisor && agentUsers.length > 0 && (
+                    <div className="flex flex-col gap-1.5">
+                      <label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                        <User className="h-3.5 w-3.5" />
+                        Agente
+                      </label>
+                      <select
+                        value={returnedSelectedAgentId || ""}
+                        onChange={(e) => setReturnedSelectedAgentId(e.target.value || null)}
+                        className="h-10 w-full px-3 py-2 rounded-lg border border-border bg-card text-sm text-foreground transition-colors hover:border-primary focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                      >
+                        <option value="">Todos os agentes</option>
+                        {agentUsers.map((agent: any) => (
+                          <option key={agent.id} value={String(agent.id)}>
+                            {agent.name} ({agent.role})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  <SiapeFilter value={returnedSiapeMode} onChange={setReturnedSiapeMode} />
+                </div>
+
+                {returnedHasFilters && (
+                  <div className="flex items-center pt-1">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setReturnedSelectedBanco(null);
+                        setReturnedSelectedCargo(null);
+                        setReturnedSelectedAgentId(null);
+                        setReturnedSiapeMode('all');
+                      }}
+                      className="h-8"
+                    >
+                      <X className="h-3.5 w-3.5 mr-1.5" />
+                      Limpar filtros
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </Card>
+
+            {renderCaseList(returnedCases, true, loadingReturned, errorReturned)}
+
+            {returnedTotal > 0 && (
+              <Pagination
+                currentPage={returnedPage}
+                totalPages={returnedTotalPages}
+                totalItems={returnedTotal}
+                itemsPerPage={returnedPageSize}
+                onPageChange={setReturnedPage}
+                onItemsPerPageChange={(size) => setReturnedPageSize(size)}
+                itemsPerPageOptions={[20, 50, 100]}
+              />
+            )}
+          </div>
+        </TabsContent>
 
         {/* ===== GLOBAL ===== */}
         <TabsContent value="global" className="mt-6">
@@ -560,7 +1050,7 @@ function EsteiraPageContent() {
 
               {/* Dropdowns + SIAPE */}
               <div className="space-y-3">
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                   {/* Banco — combobox autocomplete */}
                   {bancos.length > 0 && (
                     <div className="flex flex-col gap-1.5">
@@ -620,6 +1110,27 @@ function EsteiraPageContent() {
                     </div>
                   )}
 
+                  {isAdminOrSupervisor && agentUsers.length > 0 && (
+                    <div className="flex flex-col gap-1.5">
+                      <label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                        <User className="h-3.5 w-3.5" />
+                        Agente
+                      </label>
+                      <select
+                        value={globalSelectedAgentId || ""}
+                        onChange={(e) => setGlobalSelectedAgentId(e.target.value || null)}
+                        className="h-10 w-full px-3 py-2 rounded-lg border border-border bg-card text-sm text-foreground transition-colors hover:border-primary focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                      >
+                        <option value="">Todos os agentes</option>
+                        {agentUsers.map((agent: any) => (
+                          <option key={agent.id} value={String(agent.id)}>
+                            {agent.name} ({agent.role})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
                   {/* SIAPE — 3 estados */}
                   <SiapeFilter value={globalSiapeMode} onChange={setGlobalSiapeMode} />
                 </div>
@@ -634,6 +1145,7 @@ function EsteiraPageContent() {
                         setGlobalSelectedBanco(null);
                         setGlobalSelectedCargo(null);
                         setGlobalSelectedStatus(null);
+                        setGlobalSelectedAgentId(null);
                         setGlobalSiapeMode('all');
                       }}
                       className="h-8"

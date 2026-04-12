@@ -103,6 +103,9 @@ interface CaseDetail {
   }>;
 }
 
+const DEFAULT_PIPELINE_TAB = "never_attended" as const;
+const RETURNED_PIPELINE_TAB = "returned_to_pipeline" as const;
+
 export default function CaseDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -147,10 +150,14 @@ export default function CaseDetailPage() {
 
   // Estados para navegação entre casos
   const [navigationFilters, setNavigationFilters] = useState<{
-    tab: 'global' | 'mine';
+    tab: typeof DEFAULT_PIPELINE_TAB | typeof RETURNED_PIPELINE_TAB | 'global' | 'mine';
     status?: string[];
     search?: string;
-  }>({ tab: 'global' });
+    banco?: string;
+    cargo?: string;
+    agent_id?: string;
+    siape?: 'all' | 'only' | 'exclude';
+  }>({ tab: DEFAULT_PIPELINE_TAB });
   const [navigationPage, setNavigationPage] = useState(1);
   const [navigationStoredIds, setNavigationStoredIds] = useState<number[]>([]);
 
@@ -167,11 +174,18 @@ export default function CaseDetailPage() {
         : parsedFilters?.status
           ? [parsedFilters.status].filter(Boolean)
           : undefined;
+      const normalizedTab = savedTab === 'mine' || savedTab === 'global' || savedTab === DEFAULT_PIPELINE_TAB || savedTab === RETURNED_PIPELINE_TAB
+        ? savedTab
+        : DEFAULT_PIPELINE_TAB;
 
       setNavigationFilters({
-        tab: savedTab === 'mine' ? 'mine' : 'global',
-        status: normalizedStatus,
+        tab: normalizedTab,
+        status: normalizedTab === DEFAULT_PIPELINE_TAB || normalizedTab === RETURNED_PIPELINE_TAB ? undefined : normalizedStatus,
         search: parsedFilters?.search || undefined,
+        banco: parsedFilters?.banco || undefined,
+        cargo: parsedFilters?.cargo || undefined,
+        agent_id: parsedFilters?.agent_id || undefined,
+        siape: parsedFilters?.siape || 'all',
       });
 
       if (savedPage) {
@@ -192,24 +206,41 @@ export default function CaseDetailPage() {
       }
     } catch (err) {
       console.warn('[Navigation] Falha ao restaurar filtros da esteira', err);
-      setNavigationFilters({ tab: 'global' });
+      setNavigationFilters({ tab: DEFAULT_PIPELINE_TAB });
     }
   }, []);
 
   const navigationQueryParams = useMemo(() => {
     const statusFromFilters = navigationFilters.status?.filter(Boolean);
     const isManager = ['super_admin', 'admin', 'supervisor'].includes(userRole);
-    const resolvedStatus = statusFromFilters && statusFromFilters.length > 0
-      ? statusFromFilters
-      : (!isManager && navigationFilters.tab !== 'mine' ? ['novo'] : undefined);
+    const isMineTab = navigationFilters.tab === 'mine';
+    const isNeverAttendedTab = navigationFilters.tab === DEFAULT_PIPELINE_TAB;
+    const isReturnedTab = navigationFilters.tab === RETURNED_PIPELINE_TAB;
+    const resolvedStatus = isNeverAttendedTab
+      ? ['novo']
+      : isReturnedTab
+        ? ['novo']
+      : statusFromFilters && statusFromFilters.length > 0
+        ? statusFromFilters
+        : (!isManager && !isMineTab ? ['novo'] : undefined);
+    const banco = navigationFilters.siape === 'only'
+      ? 'SIAPE'
+      : navigationFilters.banco;
+    const excludeSiape = navigationFilters.siape === 'exclude' ? true : undefined;
 
     return buildCasesQuery({
       page: navigationPage,
       page_size: 1000,
       order: "id_desc",
       q: navigationFilters.search,
+      banco,
+      cargo: navigationFilters.cargo,
+      agent_id: navigationFilters.agent_id ? Number(navigationFilters.agent_id) : undefined,
       status: resolvedStatus,
-      mine: navigationFilters.tab === 'mine',
+      mine: isMineTab,
+      never_attended: isNeverAttendedTab ? true : undefined,
+      returned_to_pipeline: isReturnedTab ? true : undefined,
+      exclude_siape: excludeSiape,
     });
   }, [navigationFilters, userRole, navigationPage]);
 
@@ -676,7 +707,7 @@ export default function CaseDetailPage() {
 
               console.log('Dados salvos no sessionStorage:', { savedPage, savedTab, savedFilters });
 
-              if (savedPage && savedTab && savedTab === 'global') {
+              if (savedPage && savedTab) {
                 // Construir URL com parâmetros salvos
                 const params = new URLSearchParams();
                 params.set('page', savedPage);
@@ -685,11 +716,28 @@ export default function CaseDetailPage() {
                 if (savedFilters) {
                   try {
                     const filters = JSON.parse(savedFilters);
-                    if (filters.status && filters.status.length > 0) {
-                      params.set('status', filters.status.join(','));
+                    const normalizedStatus = Array.isArray(filters.status)
+                      ? filters.status.filter(Boolean)
+                      : filters.status
+                        ? [filters.status].filter(Boolean)
+                        : [];
+                    if (normalizedStatus.length > 0) {
+                      params.set('status', normalizedStatus.join(','));
                     }
                     if (filters.search) {
                       params.set('search', filters.search);
+                    }
+                    if (filters.banco) {
+                      params.set('banco', filters.banco);
+                    }
+                    if (filters.cargo) {
+                      params.set('cargo', filters.cargo);
+                    }
+                    if (filters.agent_id) {
+                      params.set('agent_id', filters.agent_id);
+                    }
+                    if (filters.siape && filters.siape !== 'all') {
+                      params.set('siape', filters.siape);
                     }
                   } catch (e) {
                     console.warn('Erro ao parsear filtros salvos:', e);
@@ -699,8 +747,8 @@ export default function CaseDetailPage() {
                 console.log('Navegando com parâmetros:', params.toString());
                 router.push(`/esteira?${params.toString()}`);
               } else {
-                // Fallback para a esteira padrão (global)
-                console.log('Navegando para global (fallback)');
+                // Fallback para a esteira padrão (Casos Novos)
+                console.log('Navegando para esteira padrão (fallback)');
                 router.push('/esteira');
               }
             }}

@@ -8,7 +8,10 @@ export type Filters = {
   entidade?: string;          // filtro por entidade
   banco?: string;             // filtro por banco (alias para entidade)
   cargo?: string;             // filtro por cargo
+  agent_id?: number;          // filtro por agente atual/histórico
   mine?: boolean;             // esteira individual
+  never_attended?: boolean;   // casos literalmente novos
+  returned_to_pipeline?: boolean; // casos devolvidos para a esteira
   assigned?: '0' | '1';       // '0' = não atribuídos, '1' = atribuídos
   exclude_siape?: boolean;    // excluir casos SIAPE/GOV
 };
@@ -43,9 +46,12 @@ export function buildCasesQuery(
 
   // cargo
   if (f.cargo) set('cargo', f.cargo);
+  if (f.agent_id !== undefined) set('agent_id', f.agent_id);
 
   // mine/assigned conforme necessidade
   if (f.mine) set('mine', 'true');
+  if (f.never_attended !== undefined) set('never_attended', f.never_attended);
+  if (f.returned_to_pipeline !== undefined) set('returned_to_pipeline', f.returned_to_pipeline);
   if (f.assigned) set('assigned', f.assigned);
 
   // excluir SIAPE/GOV
