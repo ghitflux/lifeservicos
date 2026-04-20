@@ -129,10 +129,26 @@ def deploy(password):
         compose_base + " up -d --force-recreate --no-deps " + services_str,
         timeout=120,
     )
-    check(code, "Containers reiniciados (db nao foi tocado)")
+    check(code, "Containers recriados")
 
-    print("\n  Aguardando inicializacao (20s)...")
-    time.sleep(20)
+    print("\n  Aguardando inicializacao (40s)...")
+    time.sleep(40)
+
+    # Verificar se containers realmente subiram (nao ficaram em Created)
+    # force-recreate pode deixar containers em estado Created sem iniciar
+    code, status_out, _ = run(
+        ssh,
+        "docker ps -a --format '{{.Names}} {{.Status}}' | grep -E 'src-api|src-web'",
+    )
+    stuck_created = [l for l in status_out.splitlines() if "Created" in l]
+    if stuck_created:
+        print("\n  AVISO: Containers presos em Created, forcando start...")
+        for container in stuck_created:
+            name = container.split()[0]
+            run(ssh, f"docker start {name}")
+        time.sleep(20)
+    else:
+        print("\n  Containers iniciados corretamente.")
 
     # Garantir que proxy esta na mesma rede para resolver DNS
     banner("Garantindo conectividade do proxy")
