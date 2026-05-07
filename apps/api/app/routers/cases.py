@@ -1433,8 +1433,6 @@ def list_cases(
             # Usar count com Case.id para evitar erro com campos JSON do PostgreSQL
             # quando há DISTINCT
             if payroll_joined or client_joined:
-                from sqlalchemy import func
-                # Contar apenas IDs distintos de Case
                 total = qry.with_entities(func.count(func.distinct(Case.id))).scalar() or 0
             else:
                 total = qry.count()
