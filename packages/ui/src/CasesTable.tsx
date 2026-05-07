@@ -14,7 +14,8 @@ import {
   Phone,
   FileText,
   Search,
-  Filter
+  Filter,
+  Building2
 } from "lucide-react";
 
 interface Client {
@@ -36,6 +37,8 @@ interface Case {
   telefone_preferencial?: string;
   observacoes?: string;
   banco?: string;
+  banco_principal?: string;
+  bancos?: string[];
 }
 
 interface CasesTableProps {
@@ -65,6 +68,19 @@ export function CasesTable({
       hour: '2-digit',
       minute: '2-digit'
     });
+  };
+
+  const getBankSummary = (case_: Case) => {
+    const bancos = case_.bancos && case_.bancos.length > 0
+      ? case_.bancos
+      : case_.banco
+        ? [case_.banco]
+        : [];
+    const primary = case_.banco_principal || case_.banco || bancos[0];
+    return {
+      label: primary && bancos.length > 1 ? `${primary} +${bancos.length - 1}` : primary,
+      title: bancos.join(" | "),
+    };
   };
 
   // Usar o StatusBadge padronizado do design system
@@ -198,7 +214,7 @@ export function CasesTable({
             <div className="col-span-1">ID</div>
             <div className="col-span-3">Cliente</div>
             <div className="col-span-2">Status</div>
-            <div className="col-span-2">Nº de Contratos</div>
+            <div className="col-span-2">Banco / Contratos</div>
             <div className="col-span-2">Criado em</div>
             <div className="col-span-1">Atendente</div>
             <div className="col-span-1">Ações</div>
@@ -242,6 +258,11 @@ export function CasesTable({
                   
                   <div className="flex flex-wrap gap-2">
                     <StatusBadge status={case_.status as Status} size="sm" />
+                    {getBankSummary(case_).label && (
+                      <Badge variant="secondary">
+                        {getBankSummary(case_).label}
+                      </Badge>
+                    )}
                   </div>
                   
                   <div className="flex items-center gap-4 text-xs text-muted-foreground">
@@ -300,9 +321,17 @@ export function CasesTable({
                   </div>
 
                   <div className="col-span-2 text-sm">
-                    <Badge variant="secondary">
-                      {case_.client.num_financiamentos || 0} contrato{(case_.client.num_financiamentos || 0) !== 1 ? 's' : ''}
-                    </Badge>
+                    <div className="space-y-1">
+                      {getBankSummary(case_).label && (
+                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground" title={getBankSummary(case_).title}>
+                          <Building2 className="h-3.5 w-3.5" />
+                          <span className="truncate">{getBankSummary(case_).label}</span>
+                        </div>
+                      )}
+                      <Badge variant="secondary">
+                        {case_.client.num_financiamentos || 0} contrato{(case_.client.num_financiamentos || 0) !== 1 ? 's' : ''}
+                      </Badge>
+                    </div>
                   </div>
                   
                   <div className="col-span-2 text-sm">

@@ -3,7 +3,7 @@ import React from "react";
 import { StatusBadge, type Status } from "./StatusBadge";
 import { Button } from "./Button";
 import { AdvancedCard } from "./AdvancedCard";
-import { User, Calendar, Hash, Building2, MessageSquare, Phone, Briefcase, DollarSign, FileText } from "lucide-react";
+import { User, Calendar, Hash, Building2, Briefcase, DollarSign, FileText } from "lucide-react";
 
 interface EsteiraCardProps {
   caso: {
@@ -19,6 +19,8 @@ interface EsteiraCardProps {
     assigned_to?: string;
     created_at: string;
     banco?: string;
+    banco_principal?: string;
+    bancos?: string[];
     telefone_preferencial?: string;
     observacoes?: string;
     valor_mensalidade?: number;
@@ -35,6 +37,15 @@ export function EsteiraCard({ caso, onAssign, onView }: EsteiraCardProps) {
       currency: 'BRL'
     }).format(value);
   };
+  const bancos = caso.bancos && caso.bancos.length > 0
+    ? caso.bancos
+    : caso.banco
+      ? [caso.banco]
+      : [];
+  const bancoPrincipal = caso.banco_principal || caso.banco || bancos[0];
+  const bancoResumo = bancoPrincipal && bancos.length > 1
+    ? `${bancoPrincipal} +${bancos.length - 1}`
+    : bancoPrincipal;
 
   return (
     <AdvancedCard
@@ -77,10 +88,10 @@ export function EsteiraCard({ caso, onAssign, onView }: EsteiraCardProps) {
           </div>
         )}
 
-        {caso.banco && (
+        {bancoResumo && (
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <Building2 className="h-3.5 w-3.5 flex-shrink-0" />
-            <span className="truncate">{caso.banco}</span>
+            <span className="truncate" title={bancos.join(" | ")}>{bancoResumo}</span>
           </div>
         )}
 

@@ -9,12 +9,12 @@ import { useMyStats } from "@/lib/hooks";
 import { useAuth } from "@/lib/auth";
 import { buildCasesQuery } from "@/lib/query";
 import { toast } from "sonner";
-import { Search, X, Building2, Activity, CheckCircle, AlertCircle, TrendingUp, DollarSign, Target, User, Phone, Briefcase, Hash, Calendar, CreditCard, MapPin, Copy, ChevronLeft, ChevronRight, Download, ChevronDown } from "lucide-react";
+import { Search, X, Building2, Activity, CheckCircle, AlertCircle, TrendingUp, DollarSign, Target, User, Briefcase, Download, ChevronDown } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 
 type SiapeMode = 'all' | 'only' | 'exclude';
+type FilterOption = { value: string; label: string; count: number };
 
 interface Case {
   id: number;
@@ -30,6 +30,8 @@ interface Case {
   telefone_preferencial?: string;
   observacoes?: string;
   banco?: string;
+  banco_principal?: string;
+  bancos?: string[];
   entidade?: string;
   valor_mensalidade?: number;
 }
@@ -37,15 +39,21 @@ interface Case {
 const DEFAULT_TAB = "never_attended";
 const RETURNED_TAB = "returned_to_pipeline";
 
-// Combobox de banco com autocomplete
-function BancoCombobox({
+// Combobox com autocomplete para listas longas de filtro.
+function SearchableCombobox({
   value,
   onSelect,
-  bancos,
+  options,
+  placeholder,
+  allLabel,
+  emptyLabel,
 }: {
   value: string | null;
   onSelect: (v: string | null) => void;
-  bancos: Array<{ value: string; label: string; count: number }>;
+  options: FilterOption[];
+  placeholder: string;
+  allLabel: string;
+  emptyLabel: string;
 }) {
   const [inputText, setInputText] = useState("");
   const [open, setOpen] = useState(false);
@@ -54,12 +62,12 @@ function BancoCombobox({
   // Sincronizar label quando valor externo muda
   useEffect(() => {
     if (value) {
-      const found = bancos.find((b) => b.value === value);
+      const found = options.find((b) => b.value === value);
       setInputText(found ? found.label : value);
     } else {
       setInputText("");
     }
-  }, [value, bancos]);
+  }, [value, options]);
 
   // Fechar ao clicar fora
   useEffect(() => {
@@ -68,7 +76,7 @@ function BancoCombobox({
         setOpen(false);
         // Se digitou mas não selecionou, restaurar label do valor atual
         if (value) {
-          const found = bancos.find((b) => b.value === value);
+          const found = options.find((b) => b.value === value);
           setInputText(found ? found.label : value);
         } else {
           setInputText("");
@@ -77,16 +85,16 @@ function BancoCombobox({
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  }, [value, bancos]);
+  }, [value, options]);
 
   const filtered = useMemo(() => {
-    if (!inputText || (value && bancos.find((b) => b.value === value)?.label === inputText)) {
-      return bancos;
+    if (!inputText || (value && options.find((b) => b.value === value)?.label === inputText)) {
+      return options;
     }
-    return bancos.filter((b) =>
+    return options.filter((b) =>
       b.label.toLowerCase().includes(inputText.toLowerCase())
     );
-  }, [inputText, bancos, value]);
+  }, [inputText, options, value]);
 
   return (
     <div ref={containerRef} className="relative">
@@ -99,7 +107,7 @@ function BancoCombobox({
             setOpen(true);
           }}
           onFocus={() => setOpen(true)}
-          placeholder="Todos os bancos"
+          placeholder={placeholder}
           className="h-10 w-full px-3 py-2 pr-16 rounded-lg border border-border bg-card text-sm text-foreground transition-colors hover:border-primary focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
         />
         <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
@@ -123,20 +131,20 @@ function BancoCombobox({
             onClick={() => { onSelect(null); setInputText(""); setOpen(false); }}
             className="px-3 py-2 text-sm text-muted-foreground hover:bg-muted cursor-pointer"
           >
-            Todos os bancos
+            {allLabel}
           </div>
           {filtered.length === 0 && (
-            <div className="px-3 py-2 text-sm text-muted-foreground">Nenhum banco encontrado</div>
+            <div className="px-3 py-2 text-sm text-muted-foreground">{emptyLabel}</div>
           )}
-          {filtered.map((banco) => (
+          {filtered.map((option) => (
             <div
-              key={banco.value}
+              key={option.value}
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => { onSelect(banco.value); setInputText(banco.label); setOpen(false); }}
-              className={`px-3 py-2 text-sm cursor-pointer hover:bg-muted flex items-center justify-between gap-2 ${value === banco.value ? 'bg-primary/10 text-primary font-medium' : 'text-foreground'}`}
+              onClick={() => { onSelect(option.value); setInputText(option.label); setOpen(false); }}
+              className={`px-3 py-2 text-sm cursor-pointer hover:bg-muted flex items-center justify-between gap-2 ${value === option.value ? 'bg-primary/10 text-primary font-medium' : 'text-foreground'}`}
             >
-              <span>{banco.label}</span>
-              <span className="text-xs text-muted-foreground shrink-0">({banco.count})</span>
+              <span>{option.label}</span>
+              <span className="text-xs text-muted-foreground shrink-0">({option.count})</span>
             </div>
           ))}
         </div>
@@ -176,6 +184,229 @@ function SiapeFilter({ value, onChange }: { value: SiapeMode; onChange: (v: Siap
         ))}
       </div>
     </div>
+  );
+}
+
+function useDebouncedValue<T>(value: T, delay = 350) {
+  const [debounced, setDebounced] = useState(value);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebounced(value), delay);
+    return () => window.clearTimeout(timer);
+  }, [value, delay]);
+
+  return debounced;
+}
+
+function getOptionLabel(options: FilterOption[], value: string | null) {
+  if (!value) return "";
+  return options.find((option) => option.value === value)?.label ?? value;
+}
+
+function FilterPanel({
+  searchTerm,
+  onSearchChange,
+  total,
+  singularLabel,
+  pluralLabel,
+  bancos,
+  selectedBanco,
+  onBancoChange,
+  cargos,
+  selectedCargo,
+  onCargoChange,
+  statusOptions,
+  selectedStatus,
+  onStatusChange,
+  showStatus,
+  agentUsers,
+  selectedAgentId,
+  onAgentChange,
+  showAgent,
+  siapeMode,
+  onSiapeModeChange,
+  onClear,
+  showExport,
+  exportingCsv,
+  onExport,
+}: {
+  searchTerm: string;
+  onSearchChange: (value: string) => void;
+  total: number;
+  singularLabel: string;
+  pluralLabel: string;
+  bancos: FilterOption[];
+  selectedBanco: string | null;
+  onBancoChange: (value: string | null) => void;
+  cargos: FilterOption[];
+  selectedCargo: string | null;
+  onCargoChange: (value: string | null) => void;
+  statusOptions?: FilterOption[];
+  selectedStatus?: string | null;
+  onStatusChange?: (value: string | null) => void;
+  showStatus?: boolean;
+  agentUsers?: Array<{ id: number; name: string; role: string }>;
+  selectedAgentId?: string | null;
+  onAgentChange?: (value: string | null) => void;
+  showAgent?: boolean;
+  siapeMode: SiapeMode;
+  onSiapeModeChange: (value: SiapeMode) => void;
+  onClear: () => void;
+  showExport?: boolean;
+  exportingCsv?: boolean;
+  onExport?: () => void;
+}) {
+  const statusLabel = getOptionLabel(statusOptions ?? [], selectedStatus ?? null);
+  const agentLabel = selectedAgentId
+    ? agentUsers?.find((agent) => String(agent.id) === selectedAgentId)?.name ?? selectedAgentId
+    : "";
+  const chips = [
+    searchTerm ? { key: "search", label: `Busca: ${searchTerm}`, clear: () => onSearchChange("") } : null,
+    selectedBanco ? { key: "banco", label: `Banco: ${getOptionLabel(bancos, selectedBanco)}`, clear: () => onBancoChange(null) } : null,
+    selectedCargo ? { key: "cargo", label: `Cargo: ${getOptionLabel(cargos, selectedCargo)}`, clear: () => onCargoChange(null) } : null,
+    showStatus && selectedStatus ? { key: "status", label: `Status: ${statusLabel}`, clear: () => onStatusChange?.(null) } : null,
+    showAgent && selectedAgentId ? { key: "agent", label: `Agente: ${agentLabel}`, clear: () => onAgentChange?.(null) } : null,
+    siapeMode !== "all" ? { key: "siape", label: siapeMode === "only" ? "SIAPE: Apenas" : "SIAPE: Excluir", clear: () => onSiapeModeChange("all") } : null,
+  ].filter(Boolean) as Array<{ key: string; label: string; clear: () => void }>;
+
+  const handleSiapeChange = (value: SiapeMode) => {
+    if (value === "only") onBancoChange(null);
+    onSiapeModeChange(value);
+  };
+
+  return (
+    <Card className="p-4 space-y-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+        <div className="relative flex-1 max-w-xl">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Buscar por nome, CPF, matrícula, cargo ou banco..."
+            value={searchTerm}
+            onChange={(e) => onSearchChange(e.target.value)}
+            className="pl-10"
+          />
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="text-sm text-muted-foreground whitespace-nowrap">
+            {total} {total === 1 ? singularLabel : pluralLabel}
+          </div>
+          {showExport && onExport && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onExport}
+              disabled={exportingCsv}
+              className="h-9 gap-2"
+            >
+              <Download className="h-4 w-4" />
+              {exportingCsv ? "Exportando..." : "Exportar CSV"}
+            </Button>
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
+        {bancos.length > 0 && (
+          <div className="flex flex-col gap-1.5">
+            <label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+              <Building2 className="h-3.5 w-3.5" />
+              Banco
+            </label>
+            <SearchableCombobox
+              value={selectedBanco}
+              onSelect={onBancoChange}
+              options={bancos}
+              placeholder="Todos os bancos"
+              allLabel="Todos os bancos"
+              emptyLabel="Nenhum banco encontrado"
+            />
+          </div>
+        )}
+
+        {cargos.length > 0 && (
+          <div className="flex flex-col gap-1.5">
+            <label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+              <Briefcase className="h-3.5 w-3.5" />
+              Cargo
+            </label>
+            <SearchableCombobox
+              value={selectedCargo}
+              onSelect={onCargoChange}
+              options={cargos}
+              placeholder="Todos os cargos"
+              allLabel="Todos os cargos"
+              emptyLabel="Nenhum cargo encontrado"
+            />
+          </div>
+        )}
+
+        {showStatus && statusOptions && statusOptions.length > 0 && (
+          <div className="flex flex-col gap-1.5">
+            <label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+              <Activity className="h-3.5 w-3.5" />
+              Status
+            </label>
+            <select
+              value={selectedStatus || ""}
+              onChange={(e) => onStatusChange?.(e.target.value || null)}
+              className="h-10 w-full px-3 py-2 rounded-lg border border-border bg-card text-sm text-foreground transition-colors hover:border-primary focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+            >
+              <option value="">Todos os status</option>
+              {statusOptions.map((status) => (
+                <option key={status.value} value={status.value}>
+                  {status.label} ({status.count})
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {showAgent && agentUsers && agentUsers.length > 0 && (
+          <div className="flex flex-col gap-1.5">
+            <label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+              <User className="h-3.5 w-3.5" />
+              Agente
+            </label>
+            <select
+              value={selectedAgentId || ""}
+              onChange={(e) => onAgentChange?.(e.target.value || null)}
+              className="h-10 w-full px-3 py-2 rounded-lg border border-border bg-card text-sm text-foreground transition-colors hover:border-primary focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+            >
+              <option value="">Todos os agentes</option>
+              {agentUsers.map((agent) => (
+                <option key={agent.id} value={String(agent.id)}>
+                  {agent.name} ({agent.role})
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        <SiapeFilter value={siapeMode} onChange={handleSiapeChange} />
+      </div>
+
+      {chips.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 pt-1">
+          {chips.map((chip) => (
+            <Badge key={chip.key} variant="secondary" className="h-8 gap-1.5 px-2">
+              {chip.label}
+              <button
+                type="button"
+                onClick={chip.clear}
+                className="rounded-full p-0.5 hover:bg-background/70"
+                aria-label={`Remover ${chip.label}`}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </Badge>
+          ))}
+          <Button variant="outline" size="sm" onClick={onClear} className="h-8">
+            <X className="h-3.5 w-3.5 mr-1.5" />
+            Limpar filtros
+          </Button>
+        </div>
+      )}
+    </Card>
   );
 }
 
@@ -225,12 +456,10 @@ function EsteiraPageContent() {
   const [mySelectedStatus, setMySelectedStatus] = useState<string | null>(null);
   const [mySiapeMode, setMySiapeMode] = useState<SiapeMode>('all');
 
-  // Estados — Esteira
-  const [esteiraCurrentIndex, setEsteiraCurrentIndex] = useState(0);
-  const [esteiraSelectedBanco, setEsteiraSelectedBanco] = useState<string | null>(null);
-  const [esteiraSelectedCargo, setEsteiraSelectedCargo] = useState<string | null>(null);
-  const [esteiraSelectedStatus, setEsteiraSelectedStatus] = useState<string | null>(null);
-  const [esteiraSearchTerm, setEsteiraSearchTerm] = useState("");
+  const debouncedGlobalSearchTerm = useDebouncedValue(globalSearchTerm);
+  const debouncedNeverAttendedSearchTerm = useDebouncedValue(neverAttendedSearchTerm);
+  const debouncedReturnedSearchTerm = useDebouncedValue(returnedSearchTerm);
+  const debouncedMySearchTerm = useDebouncedValue(mySearchTerm);
 
   const queryClient = useQueryClient();
 
@@ -359,7 +588,7 @@ function EsteiraPageContent() {
       "cases", "global",
       globalPage, globalPageSize,
       globalSelectedBanco, globalSelectedCargo, globalSelectedStatus, globalSelectedAgentId,
-      globalSearchTerm, globalSiapeMode,
+      debouncedGlobalSearchTerm, globalSiapeMode,
     ],
     queryFn: async () => {
       const isManager = ["super_admin", "admin", "supervisor"].includes(user?.role ?? "");
@@ -370,14 +599,14 @@ function EsteiraPageContent() {
         isManager
           ? {
               page: globalPage, page_size: globalPageSize, order: orderBy,
-              q: globalSearchTerm, banco, cargo: globalSelectedCargo || undefined,
+              q: debouncedGlobalSearchTerm, banco, cargo: globalSelectedCargo || undefined,
               status: globalSelectedStatus ? [globalSelectedStatus] : undefined,
               agent_id: globalSelectedAgentId ? Number(globalSelectedAgentId) : undefined,
               exclude_siape,
             }
           : {
               page: globalPage, page_size: globalPageSize, order: orderBy,
-              q: globalSearchTerm, banco, cargo: globalSelectedCargo || undefined,
+              q: debouncedGlobalSearchTerm, banco, cargo: globalSelectedCargo || undefined,
               status: ["novo"], exclude_siape,
             }
       );
@@ -401,7 +630,7 @@ function EsteiraPageContent() {
       "cases", "never_attended",
       neverAttendedPage, neverAttendedPageSize,
       neverAttendedSelectedBanco, neverAttendedSelectedCargo,
-      neverAttendedSearchTerm, neverAttendedSiapeMode,
+      debouncedNeverAttendedSearchTerm, neverAttendedSiapeMode,
     ],
     queryFn: async () => {
       const { banco, exclude_siape } = resolveNeverAttendedBancoParams();
@@ -411,7 +640,7 @@ function EsteiraPageContent() {
         page: neverAttendedPage,
         page_size: neverAttendedPageSize,
         order: orderBy,
-        q: neverAttendedSearchTerm,
+        q: debouncedNeverAttendedSearchTerm,
         banco,
         cargo: neverAttendedSelectedCargo || undefined,
         status: ["novo"],
@@ -438,7 +667,7 @@ function EsteiraPageContent() {
       "cases", "returned_to_pipeline",
       returnedPage, returnedPageSize,
       returnedSelectedBanco, returnedSelectedCargo, returnedSelectedAgentId,
-      returnedSearchTerm, returnedSiapeMode,
+      debouncedReturnedSearchTerm, returnedSiapeMode,
     ],
     queryFn: async () => {
       const { banco, exclude_siape } = resolveReturnedBancoParams();
@@ -448,7 +677,7 @@ function EsteiraPageContent() {
         page: returnedPage,
         page_size: returnedPageSize,
         order: orderBy,
-        q: returnedSearchTerm,
+        q: debouncedReturnedSearchTerm,
         banco,
         cargo: returnedSelectedCargo || undefined,
         agent_id: returnedSelectedAgentId ? Number(returnedSelectedAgentId) : undefined,
@@ -476,7 +705,7 @@ function EsteiraPageContent() {
       "cases", "mine",
       myPage, myPageSize,
       mySelectedBanco, mySelectedCargo, mySelectedStatus,
-      mySearchTerm, mySiapeMode,
+      debouncedMySearchTerm, mySiapeMode,
     ],
     queryFn: async () => {
       const { banco, exclude_siape } = resolveMyBancoParams();
@@ -484,7 +713,7 @@ function EsteiraPageContent() {
 
       const params = buildCasesQuery({
         page: myPage, page_size: myPageSize, order: orderBy,
-        q: mySearchTerm, banco, cargo: mySelectedCargo || undefined,
+        q: debouncedMySearchTerm, banco, cargo: mySelectedCargo || undefined,
         status: mySelectedStatus ? [mySelectedStatus] : undefined,
         mine: true, exclude_siape,
       });
@@ -501,67 +730,6 @@ function EsteiraPageContent() {
   const myCases = myData?.items ?? [];
   const myTotal = myData?.total ?? 0;
   const myTotalPages = Math.ceil(myTotal / myPageSize);
-
-  // Query — Esteira
-  const { data: esteiraData, isLoading: loadingEsteira, error: errorEsteira } = useQuery({
-    queryKey: ["cases", "esteira", esteiraSelectedBanco, esteiraSelectedCargo, esteiraSelectedStatus, esteiraSearchTerm],
-    queryFn: async () => {
-      const params = buildCasesQuery({
-        page: 1, page_size: 1000, order: "id_desc",
-        q: esteiraSearchTerm, status: ["novo"],
-      });
-      const response = await api.get(`/cases?${params.toString()}`);
-      return response.data;
-    },
-    onError: (error) => {
-      console.error('[Esteira] Error:', (error as any)?.response?.data);
-    },
-    enabled: !!user && activeTab === 'esteira',
-    staleTime: 5000,
-    refetchInterval: 10000,
-    refetchOnWindowFocus: true,
-    retry: 2,
-  });
-
-  const esteiraCases = esteiraData?.items ?? [];
-  const esteiraTotal = esteiraData?.total ?? 0;
-  const currentCase = esteiraCases[esteiraCurrentIndex];
-
-  const { data: currentCaseDetails } = useQuery({
-    queryKey: ["case", currentCase?.id],
-    queryFn: async () => {
-      if (!currentCase?.id) return null;
-      const response = await api.get(`/cases/${currentCase.id}`);
-      return response.data;
-    },
-    enabled: !!currentCase?.id && activeTab === 'esteira',
-    staleTime: 5000,
-    refetchOnWindowFocus: false,
-  });
-
-  const handleNextCase = () => {
-    if (esteiraCurrentIndex < esteiraCases.length - 1) setEsteiraCurrentIndex(esteiraCurrentIndex + 1);
-  };
-  const handlePreviousCase = () => {
-    if (esteiraCurrentIndex > 0) setEsteiraCurrentIndex(esteiraCurrentIndex - 1);
-  };
-
-  useEffect(() => {
-    setEsteiraCurrentIndex(0);
-  }, [esteiraSelectedBanco, esteiraSelectedCargo, esteiraSelectedStatus, esteiraSearchTerm]);
-
-  const assignCaseEsteiraMutation = useMutation({
-    mutationFn: async (caseId: number) => {
-      const response = await api.post(`/cases/${caseId}/assign`);
-      return { data: response.data, caseId };
-    },
-    onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ["cases"] });
-      queryClient.invalidateQueries({ queryKey: ["case", result.caseId] });
-      toast.success("Atendimento atribuído com sucesso!");
-    },
-    onError: () => toast.error("Erro ao atribuir atendimento. Tente novamente."),
-  });
 
   const assignCaseMutation = useMutation({
     mutationFn: async (caseId: number) => {
@@ -623,7 +791,6 @@ function EsteiraPageContent() {
   };
 
   const handlePegarAtendimento = (caseId: number) => assignCaseMutation.mutate(caseId);
-  const handlePegarAtendimentoEsteira = (caseId: number) => assignCaseEsteiraMutation.mutate(caseId);
 
   const handleViewCase = (caseId: number) => {
     const isMyTab = activeTab === 'mine';
@@ -698,10 +865,26 @@ function EsteiraPageContent() {
     router.push(`/casos/${caseId}`);
   };
 
+  const filterScopeParams = useMemo(() => {
+    const params = new URLSearchParams();
+    if (activeTab === DEFAULT_TAB) {
+      params.set("status", "novo");
+      params.set("never_attended", "true");
+    } else if (activeTab === RETURNED_TAB) {
+      params.set("status", "novo");
+      params.set("returned_to_pipeline", "true");
+    } else if (activeTab === "mine") {
+      params.set("mine", "true");
+    } else if (!isAdminOrSupervisor) {
+      params.set("status", "novo");
+    }
+    return params.toString();
+  }, [activeTab, isAdminOrSupervisor]);
+
   const { data: filtersData } = useQuery({
-    queryKey: ["client-filters"],
+    queryKey: ["case-filters", filterScopeParams],
     queryFn: async () => {
-      const response = await api.get("/clients/filters");
+      const response = await api.get(`/cases/filters${filterScopeParams ? `?${filterScopeParams}` : ""}`);
       return response.data;
     },
     staleTime: 60000,
@@ -719,7 +902,9 @@ function EsteiraPageContent() {
     staleTime: 60000,
   });
 
-  const bancos: Array<{ value: string; label: string; count: number }> = filtersData?.bancos ?? [];
+  const bancos: FilterOption[] = filtersData?.bancos ?? [];
+  const cargos: FilterOption[] = filtersData?.cargos ?? [];
+  const statusOptions: FilterOption[] = filtersData?.status ?? [];
 
   const renderCaseList = (cases: Case[], showPegarButton: boolean, isLoading: boolean, error?: any) => {
     if (isLoading) {
@@ -761,11 +946,6 @@ function EsteiraPageContent() {
     );
   };
 
-  const neverAttendedHasFilters = neverAttendedSelectedBanco || neverAttendedSelectedCargo || neverAttendedSiapeMode !== 'all';
-  const returnedHasFilters = returnedSelectedBanco || returnedSelectedCargo || returnedSelectedAgentId || returnedSiapeMode !== 'all';
-  const globalHasFilters = globalSelectedBanco || globalSelectedCargo || globalSelectedStatus || globalSelectedAgentId || globalSiapeMode !== 'all';
-  const myHasFilters = mySelectedBanco || mySelectedCargo || mySelectedStatus || mySiapeMode !== 'all';
-
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
@@ -783,93 +963,30 @@ function EsteiraPageContent() {
         {/* ===== CASOS NOVOS ===== */}
         <TabsContent value={DEFAULT_TAB} className="mt-6">
           <div className="space-y-6">
-            <Card className="p-4 space-y-4">
-              <div className="flex items-center gap-4">
-                <div className="relative flex-1 max-w-md">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Buscar por nome, CPF ou matrícula..."
-                    value={neverAttendedSearchTerm}
-                    onChange={(e) => setNeverAttendedSearchTerm(e.target.value)}
-                    className="pl-10"
-                  />
-                </div>
-                <div className="text-sm text-muted-foreground">
-                  {neverAttendedTotal} {neverAttendedTotal === 1 ? 'caso novo' : 'casos novos'}
-                </div>
-                {isAdminOrSupervisor && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleExportCsv}
-                    disabled={exportingCsv}
-                    className="h-9 gap-2"
-                  >
-                    <Download className="h-4 w-4" />
-                    {exportingCsv ? "Exportando..." : "Exportar CSV"}
-                  </Button>
-                )}
-              </div>
-
-              <div className="space-y-3">
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  {bancos.length > 0 && (
-                    <div className="flex flex-col gap-1.5">
-                      <label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                        <Building2 className="h-3.5 w-3.5" />
-                        Banco
-                      </label>
-                      <BancoCombobox
-                        value={neverAttendedSiapeMode === 'only' ? 'SIAPE' : neverAttendedSelectedBanco}
-                        onSelect={setNeverAttendedSelectedBanco}
-                        bancos={bancos}
-                      />
-                    </div>
-                  )}
-
-                  {filtersData?.cargos && filtersData.cargos.length > 0 && (
-                    <div className="flex flex-col gap-1.5">
-                      <label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                        <User className="h-3.5 w-3.5" />
-                        Cargo
-                      </label>
-                      <select
-                        value={neverAttendedSelectedCargo || ""}
-                        onChange={(e) => setNeverAttendedSelectedCargo(e.target.value || null)}
-                        className="h-10 w-full px-3 py-2 rounded-lg border border-border bg-card text-sm text-foreground transition-colors hover:border-primary focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                      >
-                        <option value="">Todos os cargos</option>
-                        {filtersData.cargos.map((cargo: any) => (
-                          <option key={cargo.value} value={cargo.value}>
-                            {cargo.label} ({cargo.count})
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-
-                  <SiapeFilter value={neverAttendedSiapeMode} onChange={setNeverAttendedSiapeMode} />
-                </div>
-
-                {neverAttendedHasFilters && (
-                  <div className="flex items-center pt-1">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        setNeverAttendedSelectedBanco(null);
-                        setNeverAttendedSelectedCargo(null);
-                        setNeverAttendedSiapeMode('all');
-                      }}
-                      className="h-8"
-                    >
-                      <X className="h-3.5 w-3.5 mr-1.5" />
-                      Limpar filtros
-                    </Button>
-                  </div>
-                )}
-              </div>
-            </Card>
+            <FilterPanel
+              searchTerm={neverAttendedSearchTerm}
+              onSearchChange={setNeverAttendedSearchTerm}
+              total={neverAttendedTotal}
+              singularLabel="caso novo"
+              pluralLabel="casos novos"
+              bancos={bancos}
+              selectedBanco={neverAttendedSelectedBanco}
+              onBancoChange={setNeverAttendedSelectedBanco}
+              cargos={cargos}
+              selectedCargo={neverAttendedSelectedCargo}
+              onCargoChange={setNeverAttendedSelectedCargo}
+              siapeMode={neverAttendedSiapeMode}
+              onSiapeModeChange={setNeverAttendedSiapeMode}
+              onClear={() => {
+                setNeverAttendedSearchTerm("");
+                setNeverAttendedSelectedBanco(null);
+                setNeverAttendedSelectedCargo(null);
+                setNeverAttendedSiapeMode("all");
+              }}
+              showExport={isAdminOrSupervisor}
+              exportingCsv={exportingCsv}
+              onExport={handleExportCsv}
+            />
 
             {renderCaseList(neverAttendedCases, true, loadingNeverAttended, errorNeverAttended)}
 
@@ -890,115 +1007,35 @@ function EsteiraPageContent() {
         {/* ===== CASOS RETORNADOS ===== */}
         <TabsContent value={RETURNED_TAB} className="mt-6">
           <div className="space-y-6">
-            <Card className="p-4 space-y-4">
-              <div className="flex items-center gap-4">
-                <div className="relative flex-1 max-w-md">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Buscar por nome, CPF ou matrícula..."
-                    value={returnedSearchTerm}
-                    onChange={(e) => setReturnedSearchTerm(e.target.value)}
-                    className="pl-10"
-                  />
-                </div>
-                <div className="text-sm text-muted-foreground">
-                  {returnedTotal} {returnedTotal === 1 ? 'caso retornado' : 'casos retornados'}
-                </div>
-                {isAdminOrSupervisor && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleExportCsv}
-                    disabled={exportingCsv}
-                    className="h-9 gap-2"
-                  >
-                    <Download className="h-4 w-4" />
-                    {exportingCsv ? "Exportando..." : "Exportar CSV"}
-                  </Button>
-                )}
-              </div>
-
-              <div className="space-y-3">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {bancos.length > 0 && (
-                    <div className="flex flex-col gap-1.5">
-                      <label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                        <Building2 className="h-3.5 w-3.5" />
-                        Banco
-                      </label>
-                      <BancoCombobox
-                        value={returnedSiapeMode === 'only' ? 'SIAPE' : returnedSelectedBanco}
-                        onSelect={setReturnedSelectedBanco}
-                        bancos={bancos}
-                      />
-                    </div>
-                  )}
-
-                  {filtersData?.cargos && filtersData.cargos.length > 0 && (
-                    <div className="flex flex-col gap-1.5">
-                      <label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                        <User className="h-3.5 w-3.5" />
-                        Cargo
-                      </label>
-                      <select
-                        value={returnedSelectedCargo || ""}
-                        onChange={(e) => setReturnedSelectedCargo(e.target.value || null)}
-                        className="h-10 w-full px-3 py-2 rounded-lg border border-border bg-card text-sm text-foreground transition-colors hover:border-primary focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                      >
-                        <option value="">Todos os cargos</option>
-                        {filtersData.cargos.map((cargo: any) => (
-                          <option key={cargo.value} value={cargo.value}>
-                            {cargo.label} ({cargo.count})
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-
-                  {isAdminOrSupervisor && agentUsers.length > 0 && (
-                    <div className="flex flex-col gap-1.5">
-                      <label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                        <User className="h-3.5 w-3.5" />
-                        Agente
-                      </label>
-                      <select
-                        value={returnedSelectedAgentId || ""}
-                        onChange={(e) => setReturnedSelectedAgentId(e.target.value || null)}
-                        className="h-10 w-full px-3 py-2 rounded-lg border border-border bg-card text-sm text-foreground transition-colors hover:border-primary focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                      >
-                        <option value="">Todos os agentes</option>
-                        {agentUsers.map((agent: any) => (
-                          <option key={agent.id} value={String(agent.id)}>
-                            {agent.name} ({agent.role})
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-
-                  <SiapeFilter value={returnedSiapeMode} onChange={setReturnedSiapeMode} />
-                </div>
-
-                {returnedHasFilters && (
-                  <div className="flex items-center pt-1">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        setReturnedSelectedBanco(null);
-                        setReturnedSelectedCargo(null);
-                        setReturnedSelectedAgentId(null);
-                        setReturnedSiapeMode('all');
-                      }}
-                      className="h-8"
-                    >
-                      <X className="h-3.5 w-3.5 mr-1.5" />
-                      Limpar filtros
-                    </Button>
-                  </div>
-                )}
-              </div>
-            </Card>
+            <FilterPanel
+              searchTerm={returnedSearchTerm}
+              onSearchChange={setReturnedSearchTerm}
+              total={returnedTotal}
+              singularLabel="caso retornado"
+              pluralLabel="casos retornados"
+              bancos={bancos}
+              selectedBanco={returnedSelectedBanco}
+              onBancoChange={setReturnedSelectedBanco}
+              cargos={cargos}
+              selectedCargo={returnedSelectedCargo}
+              onCargoChange={setReturnedSelectedCargo}
+              agentUsers={agentUsers}
+              selectedAgentId={returnedSelectedAgentId}
+              onAgentChange={setReturnedSelectedAgentId}
+              showAgent={isAdminOrSupervisor}
+              siapeMode={returnedSiapeMode}
+              onSiapeModeChange={setReturnedSiapeMode}
+              onClear={() => {
+                setReturnedSearchTerm("");
+                setReturnedSelectedBanco(null);
+                setReturnedSelectedCargo(null);
+                setReturnedSelectedAgentId(null);
+                setReturnedSiapeMode("all");
+              }}
+              showExport={isAdminOrSupervisor}
+              exportingCsv={exportingCsv}
+              onExport={handleExportCsv}
+            />
 
             {renderCaseList(returnedCases, true, loadingReturned, errorReturned)}
 
@@ -1019,144 +1056,40 @@ function EsteiraPageContent() {
         {/* ===== GLOBAL ===== */}
         <TabsContent value="global" className="mt-6">
           <div className="space-y-6">
-            <Card className="p-4 space-y-4">
-              {/* Busca + ações admin */}
-              <div className="flex items-center gap-4">
-                <div className="relative flex-1 max-w-md">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Buscar por nome, CPF ou matrícula..."
-                    value={globalSearchTerm}
-                    onChange={(e) => setGlobalSearchTerm(e.target.value)}
-                    className="pl-10"
-                  />
-                </div>
-                <div className="text-sm text-muted-foreground">
-                  {globalTotal} {globalTotal === 1 ? 'disponível' : 'disponíveis'}
-                </div>
-                {isAdminOrSupervisor && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleExportCsv}
-                    disabled={exportingCsv}
-                    className="h-9 gap-2"
-                  >
-                    <Download className="h-4 w-4" />
-                    {exportingCsv ? "Exportando..." : "Exportar CSV"}
-                  </Button>
-                )}
-              </div>
-
-              {/* Dropdowns + SIAPE */}
-              <div className="space-y-3">
-                <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-                  {/* Banco — combobox autocomplete */}
-                  {bancos.length > 0 && (
-                    <div className="flex flex-col gap-1.5">
-                      <label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                        <Building2 className="h-3.5 w-3.5" />
-                        Banco
-                      </label>
-                      <BancoCombobox
-                        value={globalSiapeMode === 'only' ? 'SIAPE' : globalSelectedBanco}
-                        onSelect={setGlobalSelectedBanco}
-                        bancos={bancos}
-                      />
-                    </div>
-                  )}
-
-                  {/* Cargo */}
-                  {filtersData?.cargos && filtersData.cargos.length > 0 && (
-                    <div className="flex flex-col gap-1.5">
-                      <label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                        <User className="h-3.5 w-3.5" />
-                        Cargo
-                      </label>
-                      <select
-                        value={globalSelectedCargo || ""}
-                        onChange={(e) => setGlobalSelectedCargo(e.target.value || null)}
-                        className="h-10 w-full px-3 py-2 rounded-lg border border-border bg-card text-sm text-foreground transition-colors hover:border-primary focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                      >
-                        <option value="">Todos os cargos</option>
-                        {filtersData.cargos.map((cargo: any) => (
-                          <option key={cargo.value} value={cargo.value}>
-                            {cargo.label} ({cargo.count})
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-
-                  {/* Status — APENAS ADMIN */}
-                  {isAdminOrSupervisor && filtersData?.status && filtersData.status.length > 0 && (
-                    <div className="flex flex-col gap-1.5">
-                      <label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                        <Activity className="h-3.5 w-3.5" />
-                        Status do Caso
-                      </label>
-                      <select
-                        value={globalSelectedStatus || ""}
-                        onChange={(e) => setGlobalSelectedStatus(e.target.value || null)}
-                        className="h-10 w-full px-3 py-2 rounded-lg border border-border bg-card text-sm text-foreground transition-colors hover:border-primary focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                      >
-                        <option value="">Todos os status</option>
-                        {filtersData.status.map((status: any) => (
-                          <option key={status.value} value={status.value}>
-                            {status.label} ({status.count})
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-
-                  {isAdminOrSupervisor && agentUsers.length > 0 && (
-                    <div className="flex flex-col gap-1.5">
-                      <label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                        <User className="h-3.5 w-3.5" />
-                        Agente
-                      </label>
-                      <select
-                        value={globalSelectedAgentId || ""}
-                        onChange={(e) => setGlobalSelectedAgentId(e.target.value || null)}
-                        className="h-10 w-full px-3 py-2 rounded-lg border border-border bg-card text-sm text-foreground transition-colors hover:border-primary focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                      >
-                        <option value="">Todos os agentes</option>
-                        {agentUsers.map((agent: any) => (
-                          <option key={agent.id} value={String(agent.id)}>
-                            {agent.name} ({agent.role})
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-
-                  {/* SIAPE — 3 estados */}
-                  <SiapeFilter value={globalSiapeMode} onChange={setGlobalSiapeMode} />
-                </div>
-
-                {/* Limpar filtros */}
-                {globalHasFilters && (
-                  <div className="flex items-center pt-1">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        setGlobalSelectedBanco(null);
-                        setGlobalSelectedCargo(null);
-                        setGlobalSelectedStatus(null);
-                        setGlobalSelectedAgentId(null);
-                        setGlobalSiapeMode('all');
-                      }}
-                      className="h-8"
-                    >
-                      <X className="h-3.5 w-3.5 mr-1.5" />
-                      Limpar filtros
-                    </Button>
-                  </div>
-                )}
-              </div>
-            </Card>
+            <FilterPanel
+              searchTerm={globalSearchTerm}
+              onSearchChange={setGlobalSearchTerm}
+              total={globalTotal}
+              singularLabel="disponível"
+              pluralLabel="disponíveis"
+              bancos={bancos}
+              selectedBanco={globalSelectedBanco}
+              onBancoChange={setGlobalSelectedBanco}
+              cargos={cargos}
+              selectedCargo={globalSelectedCargo}
+              onCargoChange={setGlobalSelectedCargo}
+              statusOptions={statusOptions}
+              selectedStatus={globalSelectedStatus}
+              onStatusChange={setGlobalSelectedStatus}
+              showStatus={isAdminOrSupervisor}
+              agentUsers={agentUsers}
+              selectedAgentId={globalSelectedAgentId}
+              onAgentChange={setGlobalSelectedAgentId}
+              showAgent={isAdminOrSupervisor}
+              siapeMode={globalSiapeMode}
+              onSiapeModeChange={setGlobalSiapeMode}
+              onClear={() => {
+                setGlobalSearchTerm("");
+                setGlobalSelectedBanco(null);
+                setGlobalSelectedCargo(null);
+                setGlobalSelectedStatus(null);
+                setGlobalSelectedAgentId(null);
+                setGlobalSiapeMode("all");
+              }}
+              showExport={isAdminOrSupervisor}
+              exportingCsv={exportingCsv}
+              onExport={handleExportCsv}
+            />
 
             {renderCaseList(globalCases, true, loadingGlobal, errorGlobal)}
 
@@ -1186,110 +1119,32 @@ function EsteiraPageContent() {
               <KPICard title="Volume Financeiro" value={`R$ ${(myStats?.totalVolume || 0).toLocaleString('pt-BR')}`} icon={DollarSign} />
             </div>
 
-            <Card className="p-4 space-y-4">
-              {/* Busca */}
-              <div className="flex items-center gap-4">
-                <div className="relative flex-1 max-w-md">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Buscar por nome, CPF ou matrícula..."
-                    value={mySearchTerm}
-                    onChange={(e) => setMySearchTerm(e.target.value)}
-                    className="pl-10"
-                  />
-                </div>
-                <div className="text-sm text-muted-foreground">
-                  {myTotal} {myTotal === 1 ? 'caso' : 'casos'}
-                </div>
-              </div>
-
-              {/* Dropdowns + SIAPE */}
-              <div className="space-y-3">
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  {/* Banco — combobox */}
-                  {bancos.length > 0 && (
-                    <div className="flex flex-col gap-1.5">
-                      <label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                        <Building2 className="h-3.5 w-3.5" />
-                        Banco
-                      </label>
-                      <BancoCombobox
-                        value={mySiapeMode === 'only' ? 'SIAPE' : mySelectedBanco}
-                        onSelect={setMySelectedBanco}
-                        bancos={bancos}
-                      />
-                    </div>
-                  )}
-
-                  {/* Cargo */}
-                  {filtersData?.cargos && filtersData.cargos.length > 0 && (
-                    <div className="flex flex-col gap-1.5">
-                      <label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                        <User className="h-3.5 w-3.5" />
-                        Cargo
-                      </label>
-                      <select
-                        value={mySelectedCargo || ""}
-                        onChange={(e) => setMySelectedCargo(e.target.value || null)}
-                        className="h-10 w-full px-3 py-2 rounded-lg border border-border bg-card text-sm text-foreground transition-colors hover:border-primary focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                      >
-                        <option value="">Todos os cargos</option>
-                        {filtersData.cargos.map((cargo: any) => (
-                          <option key={cargo.value} value={cargo.value}>
-                            {cargo.label} ({cargo.count})
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-
-                  {/* Status */}
-                  {filtersData?.status && filtersData.status.length > 0 && (
-                    <div className="flex flex-col gap-1.5">
-                      <label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                        <Activity className="h-3.5 w-3.5" />
-                        Status do Caso
-                      </label>
-                      <select
-                        value={mySelectedStatus || ""}
-                        onChange={(e) => setMySelectedStatus(e.target.value || null)}
-                        className="h-10 w-full px-3 py-2 rounded-lg border border-border bg-card text-sm text-foreground transition-colors hover:border-primary focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                      >
-                        <option value="">Todos os status</option>
-                        {filtersData.status.map((status: any) => (
-                          <option key={status.value} value={status.value}>
-                            {status.label} ({status.count})
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-
-                  {/* SIAPE — 3 estados */}
-                  <SiapeFilter value={mySiapeMode} onChange={setMySiapeMode} />
-                </div>
-
-                {/* Limpar filtros */}
-                {myHasFilters && (
-                  <div className="flex items-center pt-1">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        setMySelectedBanco(null);
-                        setMySelectedCargo(null);
-                        setMySelectedStatus(null);
-                        setMySiapeMode('all');
-                      }}
-                      className="h-8"
-                    >
-                      <X className="h-3.5 w-3.5 mr-1.5" />
-                      Limpar filtros
-                    </Button>
-                  </div>
-                )}
-              </div>
-            </Card>
+            <FilterPanel
+              searchTerm={mySearchTerm}
+              onSearchChange={setMySearchTerm}
+              total={myTotal}
+              singularLabel="caso"
+              pluralLabel="casos"
+              bancos={bancos}
+              selectedBanco={mySelectedBanco}
+              onBancoChange={setMySelectedBanco}
+              cargos={cargos}
+              selectedCargo={mySelectedCargo}
+              onCargoChange={setMySelectedCargo}
+              statusOptions={statusOptions}
+              selectedStatus={mySelectedStatus}
+              onStatusChange={setMySelectedStatus}
+              showStatus
+              siapeMode={mySiapeMode}
+              onSiapeModeChange={setMySiapeMode}
+              onClear={() => {
+                setMySearchTerm("");
+                setMySelectedBanco(null);
+                setMySelectedCargo(null);
+                setMySelectedStatus(null);
+                setMySiapeMode("all");
+              }}
+            />
 
             <CasesTable
               cases={myCases}

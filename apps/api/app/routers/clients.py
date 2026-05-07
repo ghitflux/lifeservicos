@@ -48,9 +48,12 @@ def normalize_bank_name(name: str) -> str:
     elif 'EQUATORIAL PREVID' in normalized:
         return 'EQUATORIAL PREVIDÊNCIA'
 
+    if 'BANCO INDUSTRIAL DO BRASIL' in normalized or 'BANCO INDUSTRIAL E COMERCIAL' in normalized:
+        return 'BANCO INDUSTRIAL DO BRASIL'
+
     # Remover CARTÃO e BRASIL do final (após tratar casos especiais)
     normalized = normalized.replace(' CARTAO', '').replace(' CARTÃO', '')
-    if normalized.endswith(' BRASIL'):
+    if normalized.endswith(' BRASIL') and not normalized.startswith('BANCO INDUSTRIAL DO'):
         normalized = normalized[:-7]
 
     # Remover espaços duplos

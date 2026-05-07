@@ -16,7 +16,7 @@ from ..security import get_current_user, verify_csrf
 from ..db import SessionLocal, get_db
 from ..models import (
     Case, Client, CaseEvent, Contract, ContractAttachment, Attachment, Simulation,
-    ClientPhone, Comment, now_brt, ClientSiapeInfo, SiapeLine
+    ClientPhone, Comment, now_brt, ClientSiapeInfo, SiapeLine, PayrollLine
 )
 from ..services.case_scheduler import CaseScheduler
 from ..constants import enrich_banks_with_names
@@ -44,6 +44,313 @@ def _parse_optional_bool(value):
     if isinstance(value, bool):
         return value
     return str(value).lower() in ("true", "1", "yes")
+
+
+def _only_digits(value) -> str:
+    return "".join(ch for ch in str(value or "") if ch.isdigit())
+
+
+def _sql_digits(column):
+    return func.regexp_replace(column, r"\D", "", "g")
+
+
+def _client_line_match(line_cls):
+    return line_cls.cpf == Client.cpf
+
+
+def _normalize_bank(value: str | None) -> str | None:
+    if not value:
+        return None
+    from app.routers.clients import normalize_bank_name
+
+    return normalize_bank_name(value)
+
+
+def _dedupe_normalized_banks(values: list[str | None]) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        normalized = _normalize_bank(value)
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        result.append(normalized)
+    return result
+
+
+def _bank_sources_by_normalized(db: Session):
+    cache_key = "case_bank_sources_by_normalized"
+    if cache_key in db.info:
+        return db.info[cache_key]
+
+    sources: dict[str, dict[str, list[str]]] = {}
+
+    def add(source: str, value: str | None):
+        normalized = _normalize_bank(value)
+        if not normalized:
+            return
+        bucket = sources.setdefault(normalized, {"case": [], "payroll": [], "siape": []})
+        if value not in bucket[source]:
+            bucket[source].append(value)
+
+    for (value,) in db.query(Case.entidade).filter(Case.entidade.isnot(None), Case.entidade != "").distinct().all():
+        add("case", value)
+    for (value,) in db.query(PayrollLine.entity_name).filter(PayrollLine.entity_name.isnot(None), PayrollLine.entity_name != "").distinct().all():
+        add("payroll", value)
+    for (value,) in db.query(SiapeLine.banco_emprestimo).filter(SiapeLine.banco_emprestimo.isnot(None), SiapeLine.banco_emprestimo != "").distinct().all():
+        add("siape", value)
+
+    db.info[cache_key] = sources
+    return sources
+
+
+def _distinct_matching_banks(db: Session, banco: str):
+    normalized = _normalize_bank(banco)
+    if not normalized:
+        return normalized, [], [], []
+
+    sources = _bank_sources_by_normalized(db).get(normalized, {})
+    return (
+        normalized,
+        sources.get("case", []),
+        sources.get("payroll", []),
+        sources.get("siape", []),
+    )
+
+
+def _payroll_for_case_exists(db: Session, *filters):
+    return (
+        db.query(PayrollLine.id)
+        .filter(
+            Client.id == Case.client_id,
+            _client_line_match(PayrollLine),
+            *filters,
+        )
+        .exists()
+    )
+
+
+def _siape_for_case_exists(db: Session, *filters):
+    return (
+        db.query(SiapeLine.id)
+        .filter(
+            Client.id == Case.client_id,
+            _client_line_match(SiapeLine),
+            *filters,
+        )
+        .exists()
+    )
+
+
+def _payroll_client_ids_query(db: Session, *filters):
+    cpf_query = db.query(PayrollLine.cpf).filter(*filters).distinct()
+    return (
+        db.query(Client.id)
+        .filter(Client.cpf.in_(cpf_query))
+        .distinct()
+    )
+
+
+def _siape_client_ids_query(db: Session, *filters):
+    cpf_query = db.query(SiapeLine.cpf).filter(*filters).distinct()
+    return (
+        db.query(Client.id)
+        .filter(Client.cpf.in_(cpf_query))
+        .distinct()
+    )
+
+
+def _client_ids_from_cpfs(db: Session, cpfs: set[str]) -> set[int]:
+    normalized_cpfs = {_only_digits(cpf) for cpf in cpfs if _only_digits(cpf)}
+    if not normalized_cpfs:
+        return set()
+    return {
+        client_id
+        for (client_id,) in (
+            db.query(Client.id)
+            .filter(Client.cpf.in_(sorted(normalized_cpfs)))
+            .distinct()
+            .all()
+        )
+    }
+
+
+def _search_matching_client_ids(db: Session, term: str) -> list[int]:
+    like = f"%{term}%"
+    client_ids = {
+        client_id
+        for (client_id,) in (
+            db.query(Client.id)
+            .filter(
+                or_(
+                    Client.name.ilike(like),
+                    Client.cpf.ilike(like),
+                    Client.matricula.ilike(like),
+                    Client.cargo.ilike(like),
+                )
+            )
+            .distinct()
+            .all()
+        )
+    }
+
+    payroll_cpfs = {
+        cpf
+        for (cpf,) in (
+            db.query(PayrollLine.cpf)
+            .filter(
+                or_(
+                    PayrollLine.entity_name.ilike(like),
+                    PayrollLine.cargo.ilike(like),
+                )
+            )
+            .distinct()
+            .all()
+        )
+    }
+    siape_cpfs = {
+        cpf
+        for (cpf,) in (
+            db.query(SiapeLine.cpf)
+            .filter(SiapeLine.banco_emprestimo.ilike(like))
+            .distinct()
+            .all()
+        )
+    }
+    client_ids.update(_client_ids_from_cpfs(db, payroll_cpfs | siape_cpfs))
+    return sorted(client_ids)
+
+
+def _case_bank_condition(db: Session, banco: str):
+    normalized, case_values, payroll_values, siape_values = _distinct_matching_banks(db, banco)
+    if normalized == "SIAPE":
+        return Case.source == "siape"
+
+    conditions = []
+    if case_values:
+        conditions.append(Case.entidade.in_(case_values))
+    if payroll_values:
+        conditions.append(Case.client_id.in_(_payroll_client_ids_query(db, PayrollLine.entity_name.in_(payroll_values))))
+    if siape_values:
+        conditions.append(Case.client_id.in_(_siape_client_ids_query(db, SiapeLine.banco_emprestimo.in_(siape_values))))
+
+    if not conditions:
+        conditions.append(Case.entidade == banco)
+    return or_(*conditions)
+
+
+def _financing_count_expr(db: Session, banco: str | None = None):
+    filters = []
+    if banco:
+        normalized, _, payroll_values, _ = _distinct_matching_banks(db, banco)
+        if normalized and normalized != "SIAPE":
+            filters.append(PayrollLine.entity_name.in_(payroll_values or [banco]))
+
+    return (
+        db.query(func.count(PayrollLine.id))
+        .filter(
+            Client.id == Case.client_id,
+            _client_line_match(PayrollLine),
+            *filters,
+        )
+        .correlate(Case)
+        .scalar_subquery()
+    )
+
+
+def _financing_count_subquery(db: Session, banco: str | None = None):
+    qry = db.query(
+        PayrollLine.cpf.label("cpf"),
+        func.count(PayrollLine.id).label("financing_count"),
+    )
+    if banco:
+        normalized, _, payroll_values, _ = _distinct_matching_banks(db, banco)
+        if normalized and normalized != "SIAPE":
+            qry = qry.filter(PayrollLine.entity_name.in_(payroll_values or [banco]))
+    return qry.group_by(PayrollLine.cpf).subquery()
+
+
+def _client_payroll_rows(db: Session, client: Client):
+    cpf = _only_digits(getattr(client, "cpf", ""))
+    return db.query(PayrollLine).filter(PayrollLine.cpf == cpf)
+
+
+def _client_siape_rows(db: Session, client: Client):
+    cpf = _only_digits(getattr(client, "cpf", ""))
+    return db.query(SiapeLine).filter(SiapeLine.cpf == cpf)
+
+
+def _case_bank_names(db: Session, case: Case, client: Client | None) -> list[str]:
+    values: list[str | None] = [getattr(case, "entidade", None)]
+    if client:
+        values.extend(value for (value,) in _client_payroll_rows(db, client).with_entities(PayrollLine.entity_name).distinct().all())
+        values.extend(value for (value,) in _client_siape_rows(db, client).with_entities(SiapeLine.banco_emprestimo).distinct().all())
+    return _dedupe_normalized_banks(values)
+
+
+def _literal_new_case_condition(db: Session):
+    has_assignment_events = (
+        db.query(CaseEvent.id)
+        .filter(
+            CaseEvent.case_id == Case.id,
+            CaseEvent.type.in_(["case.assigned", "case.reassigned"]),
+        )
+        .exists()
+    )
+    has_effectivated_contract = (
+        db.query(Contract.id)
+        .filter(Contract.case_id == Case.id)
+        .exists()
+    )
+    has_effectivated_event = (
+        db.query(CaseEvent.id)
+        .filter(
+            CaseEvent.case_id == Case.id,
+            CaseEvent.type == "finance.disbursed",
+        )
+        .exists()
+    )
+    return and_(
+        Case.assigned_user_id.is_(None),
+        Case.assigned_at.is_(None),
+        or_(
+            Case.assignment_history.is_(None),
+            cast(Case.assignment_history, String) == "[]",
+        ),
+        ~has_assignment_events,
+        ~has_effectivated_contract,
+        ~has_effectivated_event,
+    )
+
+
+def _returned_case_condition(db: Session):
+    has_return_event = (
+        db.query(CaseEvent.id)
+        .filter(
+            CaseEvent.case_id == Case.id,
+            CaseEvent.type.in_([
+                "case.returned_to_pipeline",
+                "case.auto_expired",
+                "case.expired",
+            ]),
+        )
+        .exists()
+    )
+    was_previously_assigned = or_(
+        cast(Case.assignment_history, String) != "[]",
+        db.query(CaseEvent.id)
+        .filter(
+            CaseEvent.case_id == Case.id,
+            CaseEvent.type.in_(["case.assigned", "case.reassigned"]),
+        )
+        .exists()
+    )
+    return and_(
+        Case.status == "novo",
+        Case.assigned_user_id.is_(None),
+        has_return_event,
+        was_previously_assigned,
+    )
 
 
 class PageOut(BaseModel):
@@ -77,6 +384,173 @@ class BulkDeleteRequest(BaseModel):
 class ExpiryUpdate(BaseModel):
     expires_at_iso: str | None = None
     force_expired: bool = False
+
+
+@r.get("/filters")
+def case_filters(
+    status: str | None = None,
+    mine: str | bool = Query(False),
+    never_attended: str | bool | None = Query(None),
+    returned_to_pipeline: str | bool | None = Query(None),
+    exclude_siape: bool = Query(False),
+    user=Depends(
+        require_roles(
+            "admin", "supervisor", "financeiro", "calculista",
+            "atendente", "fechamento"
+        )
+    ),
+):
+    """Filtros da esteira baseados nas mesmas regras de /cases."""
+    with SessionLocal() as db:
+        mine_bool = mine if isinstance(mine, bool) else str(mine).lower() in ('true', '1', 'yes')
+        never_attended_bool = _parse_optional_bool(never_attended)
+        returned_to_pipeline_bool = _parse_optional_bool(returned_to_pipeline)
+
+        qry = db.query(Case)
+        if user.role == "atendente":
+            if mine_bool:
+                qry = qry.filter(Case.assigned_user_id == user.id)
+            else:
+                now = now_brt()
+                qry = qry.filter(
+                    or_(
+                        Case.assigned_user_id.is_(None),
+                        Case.assignment_expires_at < now,
+                    )
+                )
+        elif mine_bool:
+            qry = qry.filter(Case.assigned_user_id == user.id)
+
+        if status:
+            status_list = [s.strip() for s in status.split(",") if s.strip()]
+            if len(status_list) == 1:
+                qry = qry.filter(Case.status == status_list[0])
+            elif len(status_list) > 1:
+                qry = qry.filter(Case.status.in_(status_list))
+
+        if never_attended_bool is not None:
+            condition = _literal_new_case_condition(db)
+            qry = qry.filter(condition if never_attended_bool else ~condition)
+
+        if returned_to_pipeline_bool is not None:
+            condition = _returned_case_condition(db)
+            qry = qry.filter(condition if returned_to_pipeline_bool else ~condition)
+
+        if exclude_siape:
+            qry = qry.filter(Case.source != "siape")
+
+        from collections import Counter, defaultdict
+
+        case_rows = qry.with_entities(
+            Case.client_id,
+            Case.entidade,
+            Case.status,
+        ).all()
+        scoped_clients = qry.with_entities(
+            Case.client_id.label("client_id")
+        ).distinct().subquery()
+
+        bank_counter: Counter[str] = Counter()
+        cargo_counter: Counter[str] = Counter()
+        status_counter: Counter[str] = Counter()
+        banks_by_client: dict[int, set[str]] = defaultdict(set)
+        cargos_by_client: dict[int, set[str]] = defaultdict(set)
+
+        for client_id, cargo in (
+            db.query(Client.id, Client.cargo)
+            .join(scoped_clients, Client.id == scoped_clients.c.client_id)
+            .filter(Client.cargo.isnot(None), Client.cargo != "")
+            .all()
+        ):
+            cargos_by_client[client_id].add(cargo)
+
+        for client_id, entity_name, payroll_cargo in (
+            db.query(Client.id, PayrollLine.entity_name, PayrollLine.cargo)
+            .join(scoped_clients, Client.id == scoped_clients.c.client_id)
+            .join(PayrollLine, PayrollLine.cpf == Client.cpf)
+            .filter(
+                or_(
+                    PayrollLine.entity_name.isnot(None),
+                    PayrollLine.cargo.isnot(None),
+                )
+            )
+            .distinct()
+            .all()
+        ):
+            normalized_bank = _normalize_bank(entity_name)
+            if normalized_bank:
+                banks_by_client[client_id].add(normalized_bank)
+            if payroll_cargo:
+                cargos_by_client[client_id].add(payroll_cargo)
+
+        for client_id, banco_emprestimo in (
+            db.query(Client.id, SiapeLine.banco_emprestimo)
+            .join(scoped_clients, Client.id == scoped_clients.c.client_id)
+            .join(SiapeLine, SiapeLine.cpf == Client.cpf)
+            .filter(
+                SiapeLine.banco_emprestimo.isnot(None),
+                SiapeLine.banco_emprestimo != "",
+            )
+            .distinct()
+            .all()
+        ):
+            normalized_bank = _normalize_bank(banco_emprestimo)
+            if normalized_bank:
+                banks_by_client[client_id].add(normalized_bank)
+
+        for client_id, entidade, status_value in case_rows:
+            status_counter[status_value] += 1
+
+            case_banks = set(banks_by_client.get(client_id, set()))
+            normalized_case_bank = _normalize_bank(entidade)
+            if normalized_case_bank:
+                case_banks.add(normalized_case_bank)
+            for banco in case_banks:
+                bank_counter[banco] += 1
+
+            for cargo in cargos_by_client.get(client_id, set()):
+                cargo_counter[cargo] += 1
+
+        bancos = [
+            {"value": banco, "label": banco, "count": count}
+            for banco, count in bank_counter.items()
+            if count > 0
+        ]
+        bancos.sort(key=lambda item: (-item["count"], item["label"]))
+
+        cargos = [
+            {"value": cargo, "label": cargo, "count": count}
+            for cargo, count in cargo_counter.items()
+            if count > 0
+        ]
+        cargos.sort(key=lambda item: (-item["count"], item["label"]))
+
+        default_statuses = {
+            "novo": "Novo",
+            "em_atendimento": "Em Atendimento",
+            "calculista_pendente": "Calculista Pendente",
+            "calculo_aprovado": "Cálculo Aprovado",
+            "calculo_rejeitado": "Cálculo Rejeitado",
+            "fechamento_pendente": "Fechamento Pendente",
+            "fechamento_aprovado": "Fechamento Aprovado",
+            "financeiro_pendente": "Financeiro Pendente",
+            "contrato_efetivado": "Contrato Efetivado",
+            "devolvido_financeiro": "Devolvido Financeiro",
+            "caso_cancelado": "Cancelado",
+            "encerrado": "Encerrado",
+            "sem_contato": "Sem Contato",
+            "arquivado": "Arquivado",
+        }
+        db_statuses = {value for (value,) in db.query(Case.status).distinct().all() if value}
+        status_items = []
+        for status_value in sorted(set(default_statuses) | db_statuses):
+            status_items.append({
+                "value": status_value,
+                "label": default_statuses.get(status_value, status_value.replace("_", " ").title()),
+                "count": status_counter.get(status_value, 0),
+            })
+
+        return {"bancos": bancos, "cargos": cargos, "status": status_items}
 
 
 @r.get("/{case_id}")
@@ -889,72 +1363,13 @@ def list_cases(
                 )
 
             if never_attended_bool is not None:
-                has_assignment_events = (
-                    db.query(CaseEvent.id)
-                    .filter(
-                        CaseEvent.case_id == Case.id,
-                        CaseEvent.type.in_(["case.assigned", "case.reassigned"]),
-                    )
-                    .exists()
-                )
-                has_effectivated_contract = (
-                    db.query(Contract.id)
-                    .filter(Contract.case_id == Case.id)
-                    .exists()
-                )
-                has_effectivated_event = (
-                    db.query(CaseEvent.id)
-                    .filter(
-                        CaseEvent.case_id == Case.id,
-                        CaseEvent.type == "finance.disbursed",
-                    )
-                    .exists()
-                )
-
-                literal_new_case = and_(
-                    Case.assigned_user_id.is_(None),
-                    Case.assigned_at.is_(None),
-                    or_(
-                        Case.assignment_history.is_(None),
-                        cast(Case.assignment_history, String) == "[]",
-                    ),
-                    ~has_assignment_events,
-                    ~has_effectivated_contract,
-                    ~has_effectivated_event,
-                )
-
+                literal_new_case = _literal_new_case_condition(db)
                 qry = qry.filter(
                     literal_new_case if never_attended_bool else ~literal_new_case
                 )
 
             if returned_to_pipeline_bool is not None:
-                has_return_event = (
-                    db.query(CaseEvent.id)
-                    .filter(
-                        CaseEvent.case_id == Case.id,
-                        CaseEvent.type.in_([
-                            "case.returned_to_pipeline",
-                            "case.auto_expired",
-                            "case.expired",
-                        ]),
-                    )
-                    .exists()
-                )
-                was_previously_assigned = or_(
-                    cast(Case.assignment_history, String) != "[]",
-                    db.query(CaseEvent.id)
-                    .filter(
-                        CaseEvent.case_id == Case.id,
-                        CaseEvent.type.in_(["case.assigned", "case.reassigned"]),
-                    )
-                    .exists()
-                )
-                returned_case = and_(
-                    Case.status == "novo",
-                    Case.assigned_user_id.is_(None),
-                    has_return_event,
-                    was_previously_assigned,
-                )
+                returned_case = _returned_case_condition(db)
                 qry = qry.filter(
                     returned_case if returned_to_pipeline_bool else ~returned_case
                 )
@@ -966,55 +1381,36 @@ def list_cases(
                 elif len(status_list) > 1:
                     qry = qry.filter(Case.status.in_(status_list))
 
-            # Filtro por entidade (banco) — usa cases.entidade diretamente, sem join PayrollLine
+            # Filtro por entidade (banco): considera o banco principal do caso
+            # e todos os bancos registrados para o cliente em folha/SIAPE.
             if entity_filter:
-                from app.routers.clients import normalize_bank_name
-
-                if entity_filter.upper() == 'SIAPE':
-                    # Filtro especial: todos os casos importados via SIAPE
-                    qry = qry.filter(Case.source == 'siape')
-                else:
-                    # Buscar todas as entidades distintas e filtrar pelo nome normalizado
-                    all_entidades = db.query(Case.entidade).filter(
-                        Case.entidade.isnot(None)
-                    ).distinct().all()
-                    matching_entidades = [
-                        e[0] for e in all_entidades
-                        if normalize_bank_name(e[0]) == entity_filter
-                    ]
-                    if matching_entidades:
-                        qry = qry.filter(Case.entidade.in_(matching_entidades))
-                    else:
-                        # fallback: match exato
-                        qry = qry.filter(Case.entidade == entity_filter)
+                qry = qry.filter(_case_bank_condition(db, entity_filter))
 
             # Excluir casos SIAPE/GOV
             if exclude_siape:
                 qry = qry.filter(Case.source != 'siape')
 
-            # Filtro por cargo — usa clients.cargo diretamente
+            # Filtro por cargo — considera cadastro e cargo mais recente em folha.
             if cargo:
                 if not client_joined:
                     qry = qry.join(Client, Client.id == Case.client_id)
                     client_joined = True
-                qry = qry.filter(Client.cargo == cargo).distinct()
-
-            # Busca por nome, CPF, matrícula ou entidade
-            if q and q.strip():
-                like = f"%{q.strip()}%"
-
-                if not client_joined:
-                    qry = qry.join(Client, Client.id == Case.client_id)
-                    client_joined = True
-
                 qry = qry.filter(
                     or_(
-                        Client.name.ilike(like),
-                        Client.cpf.ilike(like),
-                        Client.matricula.ilike(like),
-                        Case.entidade.ilike(like),
+                        Client.cargo == cargo,
+                        Case.client_id.in_(_payroll_client_ids_query(db, PayrollLine.cargo == cargo)),
                     )
                 ).distinct()
+
+            # Busca por nome, CPF, matrícula, entidade, cargo e bancos registrados.
+            if q and q.strip():
+                term = q.strip()
+                like = f"%{term}%"
+                matching_client_ids = _search_matching_client_ids(db, term)
+                conditions = [Case.entidade.ilike(like)]
+                if matching_client_ids:
+                    conditions.append(Case.client_id.in_(matching_client_ids))
+                qry = qry.filter(or_(*conditions))
 
             if created_after:
                 try:
@@ -1049,11 +1445,33 @@ def list_cases(
                 qry = qry.order_by(
                     Case.last_update_at.desc().nullslast(), Case.id.desc()
                 )
+            elif order.startswith("financiamentos_banco_desc:"):
+                banco_order = order.split(":", 1)[1].strip()
+                if not client_joined:
+                    qry = qry.join(Client, Client.id == Case.client_id)
+                    client_joined = True
+                financing_counts = _financing_count_subquery(db, banco_order)
+                qry = qry.outerjoin(
+                    financing_counts,
+                    financing_counts.c.cpf == Client.cpf,
+                )
+                qry = qry.order_by(
+                    func.coalesce(financing_counts.c.financing_count, 0).desc(),
+                    Case.id.desc(),
+                )
             elif order == "financiamentos_desc":
-                # Ordenar por número de financiamentos (decrescente)
-                # Isso será implementado mais tarde, por enquanto usar
-                # ordem padrão
-                qry = qry.order_by(Case.id.desc())
+                if not client_joined:
+                    qry = qry.join(Client, Client.id == Case.client_id)
+                    client_joined = True
+                financing_counts = _financing_count_subquery(db)
+                qry = qry.outerjoin(
+                    financing_counts,
+                    financing_counts.c.cpf == Client.cpf,
+                )
+                qry = qry.order_by(
+                    func.coalesce(financing_counts.c.financing_count, 0).desc(),
+                    Case.id.desc(),
+                )
             else:
                 qry = qry.order_by(Case.id.desc())
 
@@ -1072,6 +1490,8 @@ def list_cases(
                         .filter(Case.id.in_(case_ids))
                         .all()
                     )
+                    case_order = {case_id: index for index, case_id in enumerate(case_ids)}
+                    rows.sort(key=lambda case: case_order.get(case.id, 0))
                 else:
                     rows = []
             else:
@@ -1089,6 +1509,9 @@ def list_cases(
             for c in rows:
                 try:
                     entidade_value = getattr(c, "entidade", None)
+                    client_obj = c.client if hasattr(c, "client") else None
+                    bancos_caso = _case_bank_names(db, c, client_obj)
+                    banco_principal = bancos_caso[0] if bancos_caso else entidade_value
                     item = {
                         "id": c.id,
                         "status": c.status or "novo",
@@ -1103,7 +1526,9 @@ def list_cases(
                         "created_at": (
                             c.created_at.isoformat() if c.created_at else None
                         ),
-                        "banco": entidade_value,  # Usar entidade como banco
+                        "banco": banco_principal,
+                        "banco_principal": banco_principal,
+                        "bancos": bancos_caso,
                         "entidade": entidade_value,
                         "referencia_competencia": getattr(
                             c, "referencia_competencia", None
@@ -1114,16 +1539,12 @@ def list_cases(
                     }
 
                     if hasattr(c, "client") and c.client:
-                        from app.models import PayrollLine
                         from sqlalchemy import desc
-                        num_financiamentos = db.query(PayrollLine).filter(
-                            PayrollLine.cpf == c.client.cpf
-                        ).count()
+                        client_payroll = _client_payroll_rows(db, c.client)
+                        num_financiamentos = client_payroll.count()
 
                         # Buscar cargo e valor da mensalidade mais recente
-                        latest_payroll = db.query(PayrollLine).filter(
-                            PayrollLine.cpf == c.client.cpf
-                        ).order_by(
+                        latest_payroll = client_payroll.order_by(
                             desc(PayrollLine.ref_year),
                             desc(PayrollLine.ref_month),
                             desc(PayrollLine.valor_parcela_ref)
@@ -1147,16 +1568,12 @@ def list_cases(
                             else None
                         )
                         if client:
-                            from app.models import PayrollLine
                             from sqlalchemy import desc
-                            num_financiamentos = db.query(PayrollLine).filter(
-                                PayrollLine.cpf == client.cpf
-                            ).count()
+                            client_payroll = _client_payroll_rows(db, client)
+                            num_financiamentos = client_payroll.count()
 
                             # Buscar cargo e valor da mensalidade mais recente
-                            latest_payroll = db.query(PayrollLine).filter(
-                                PayrollLine.cpf == client.cpf
-                            ).order_by(
+                            latest_payroll = client_payroll.order_by(
                                 desc(PayrollLine.ref_year),
                                 desc(PayrollLine.ref_month),
                                 desc(PayrollLine.valor_parcela_ref)
@@ -1202,14 +1619,6 @@ def list_cases(
                         }
                     )
 
-            if order == "financiamentos_desc":
-                items.sort(
-                    key=lambda x: x.get("client", {}).get(
-                        "num_financiamentos", 0
-                    ),
-                    reverse=True
-                )
-
             return {
                 "items": items,
                 "total": total,
@@ -1247,7 +1656,6 @@ def export_cases_csv(
     """
     import csv
     import io
-    from app.routers.clients import normalize_bank_name
     from sqlalchemy.orm import joinedload
 
     with SessionLocal() as db:
@@ -1267,34 +1675,29 @@ def export_cases_csv(
                 qry = qry.filter(Case.status.in_(status_list))
 
         if entidade:
-            if entidade.upper() == "SIAPE":
-                qry = qry.filter(Case.source == "siape")
-            else:
-                all_entidades = db.query(Case.entidade).filter(
-                    Case.entidade.isnot(None)
-                ).distinct().all()
-                matching = [e[0] for e in all_entidades if normalize_bank_name(e[0]) == entidade]
-                qry = qry.filter(Case.entidade.in_(matching) if matching else Case.entidade == entidade)
+            qry = qry.filter(_case_bank_condition(db, entidade))
 
         if cargo:
             if not client_joined:
                 qry = qry.join(Client, Client.id == Case.client_id)
                 client_joined = True
-            qry = qry.filter(Client.cargo == cargo).distinct()
-
-        if q and q.strip():
-            like = f"%{q.strip()}%"
-            if not client_joined:
-                qry = qry.join(Client, Client.id == Case.client_id)
-                client_joined = True
             qry = qry.filter(
                 or_(
-                    Client.name.ilike(like),
-                    Client.cpf.ilike(like),
-                    Client.matricula.ilike(like),
-                    Case.entidade.ilike(like),
+                    Client.cargo == cargo,
+                    Case.client_id.in_(_payroll_client_ids_query(db, PayrollLine.cargo == cargo)),
                 )
             ).distinct()
+
+        if q and q.strip():
+            term = q.strip()
+            like = f"%{term}%"
+            matching_client_ids = _search_matching_client_ids(db, term)
+            conditions = [Case.entidade.ilike(like)]
+            if matching_client_ids:
+                conditions.append(Case.client_id.in_(matching_client_ids))
+            qry = qry.filter(
+                or_(*conditions)
+            )
 
         if exclude_siape:
             qry = qry.filter(Case.source != "siape")
@@ -1317,71 +1720,13 @@ def export_cases_csv(
             )
 
         if never_attended_bool is not None:
-            has_assignment_events = (
-                db.query(CaseEvent.id)
-                .filter(
-                    CaseEvent.case_id == Case.id,
-                    CaseEvent.type.in_(["case.assigned", "case.reassigned"]),
-                )
-                .exists()
-            )
-            has_effectivated_contract = (
-                db.query(Contract.id)
-                .filter(Contract.case_id == Case.id)
-                .exists()
-            )
-            has_effectivated_event = (
-                db.query(CaseEvent.id)
-                .filter(
-                    CaseEvent.case_id == Case.id,
-                    CaseEvent.type == "finance.disbursed",
-                )
-                .exists()
-            )
-
-            literal_new_case = and_(
-                Case.assigned_user_id.is_(None),
-                Case.assigned_at.is_(None),
-                or_(
-                    Case.assignment_history.is_(None),
-                    cast(Case.assignment_history, String) == "[]",
-                ),
-                ~has_assignment_events,
-                ~has_effectivated_contract,
-                ~has_effectivated_event,
-            )
+            literal_new_case = _literal_new_case_condition(db)
             qry = qry.filter(
                 literal_new_case if never_attended_bool else ~literal_new_case
             )
 
         if returned_to_pipeline_bool is not None:
-            has_return_event = (
-                db.query(CaseEvent.id)
-                .filter(
-                    CaseEvent.case_id == Case.id,
-                    CaseEvent.type.in_([
-                        "case.returned_to_pipeline",
-                        "case.auto_expired",
-                        "case.expired",
-                    ]),
-                )
-                .exists()
-            )
-            was_previously_assigned = or_(
-                cast(Case.assignment_history, String) != "[]",
-                db.query(CaseEvent.id)
-                .filter(
-                    CaseEvent.case_id == Case.id,
-                    CaseEvent.type.in_(["case.assigned", "case.reassigned"]),
-                )
-                .exists()
-            )
-            returned_case = and_(
-                Case.status == "novo",
-                Case.assigned_user_id.is_(None),
-                has_return_event,
-                was_previously_assigned,
-            )
+            returned_case = _returned_case_condition(db)
             qry = qry.filter(
                 returned_case if returned_to_pipeline_bool else ~returned_case
             )
@@ -1392,17 +1737,20 @@ def export_cases_csv(
         output = io.StringIO()
         writer = csv.writer(output, delimiter=",", quoting=csv.QUOTE_ALL)
         writer.writerow([
-            "id", "status", "banco", "agente_responsavel",
+            "id", "status", "banco", "bancos_registrados", "agente_responsavel",
             "nome_cliente", "cpf", "matricula", "telefone", "cargo",
             "criado_em", "atualizado_em",
         ])
 
         for c in cases:
             cl = c.client
+            bancos_caso = _case_bank_names(db, c, cl)
+            banco_principal = bancos_caso[0] if bancos_caso else (c.entidade or "")
             writer.writerow([
                 c.id,
                 c.status or "",
-                c.entidade or "",
+                banco_principal,
+                " | ".join(bancos_caso),
                 c.assigned_user.name if c.assigned_user else "",
                 cl.name if cl else "",
                 cl.cpf if cl else "",
