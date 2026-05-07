@@ -1390,17 +1390,17 @@ def list_cases(
             if exclude_siape:
                 qry = qry.filter(Case.source != 'siape')
 
-            # Filtro por cargo — considera cadastro e cargo mais recente em folha.
+            # Filtro por cargo — considera cadastro do cliente e cargo em folha.
+            # Usa subqueries para evitar JOIN+DISTINCT incompatível com ORDER BY.
             if cargo:
-                if not client_joined:
-                    qry = qry.join(Client, Client.id == Case.client_id)
-                    client_joined = True
+                cargo_client_ids = db.query(Client.id).filter(Client.cargo.ilike(cargo)).distinct()
+                cargo_payroll_ids = _payroll_client_ids_query(db, PayrollLine.cargo.ilike(cargo))
                 qry = qry.filter(
                     or_(
-                        Client.cargo == cargo,
-                        Case.client_id.in_(_payroll_client_ids_query(db, PayrollLine.cargo == cargo)),
+                        Case.client_id.in_(cargo_client_ids),
+                        Case.client_id.in_(cargo_payroll_ids),
                     )
-                ).distinct()
+                )
 
             # Busca por nome, CPF, matrícula, entidade, cargo e bancos registrados.
             if q and q.strip():
@@ -1676,15 +1676,14 @@ def export_cases_csv(
             qry = qry.filter(_case_bank_condition(db, entidade))
 
         if cargo:
-            if not client_joined:
-                qry = qry.join(Client, Client.id == Case.client_id)
-                client_joined = True
+            cargo_client_ids = db.query(Client.id).filter(Client.cargo.ilike(cargo)).distinct()
+            cargo_payroll_ids = _payroll_client_ids_query(db, PayrollLine.cargo.ilike(cargo))
             qry = qry.filter(
                 or_(
-                    Client.cargo == cargo,
-                    Case.client_id.in_(_payroll_client_ids_query(db, PayrollLine.cargo == cargo)),
+                    Case.client_id.in_(cargo_client_ids),
+                    Case.client_id.in_(cargo_payroll_ids),
                 )
-            ).distinct()
+            )
 
         if q and q.strip():
             term = q.strip()
